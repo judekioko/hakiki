@@ -6,15 +6,51 @@ import { Logo } from "@/components/logo";
 
 export type NavItem = { href: string; label: string };
 
-const navItems: NavItem[] = [
-  { href: "/app", label: "Overview" },
-  { href: "/app/payments", label: "Payments" },
-  { href: "/app/invoices", label: "eTIMS invoices" },
-  { href: "/app/suppliers", label: "Suppliers" },
-  { href: "/app/report", label: "Year-end report" },
-  { href: "/app/businesses", label: "Businesses" },
-  { href: "/app/settings", label: "Settings" },
+const navSections: { title: string | null; items: NavItem[] }[] = [
+  { title: null, items: [{ href: "/app", label: "Dashboard" }] },
+  {
+    title: "Sales",
+    items: [
+      { href: "/app/sales/invoices", label: "Invoices" },
+      { href: "/app/sales/receipts", label: "Money received" },
+      { href: "/app/sales/customers", label: "Customers" },
+    ],
+  },
+  {
+    title: "Purchases",
+    items: [
+      { href: "/app/invoices", label: "Bills" },
+      { href: "/app/payments", label: "Money paid out" },
+      { href: "/app/suppliers", label: "Suppliers" },
+      { href: "/app/expense-check", label: "Tax invoice check" },
+    ],
+  },
+  { title: "Stock", items: [{ href: "/app/items", label: "Products & services" }] },
+  {
+    title: "Payroll",
+    items: [
+      { href: "/app/payroll", label: "Pay runs" },
+      { href: "/app/payroll/employees", label: "Employees" },
+    ],
+  },
+  {
+    title: "Accounting",
+    items: [
+      { href: "/app/reports", label: "Reports" },
+      { href: "/app/accounts", label: "Chart of accounts" },
+      { href: "/app/journal", label: "Journal" },
+      { href: "/app/payments/import", label: "Import statement" },
+    ],
+  },
+  {
+    title: null,
+    items: [
+      { href: "/app/businesses", label: "Businesses" },
+      { href: "/app/settings", label: "Settings" },
+    ],
+  },
 ];
+const navItems = navSections.flatMap((s) => s.items);
 
 export function DashboardShell({
   userName,
@@ -33,15 +69,24 @@ export function DashboardShell({
         <div className="border-b border-slate-200 px-5 py-4">
           <Logo />
         </div>
-        <nav className="flex-1 space-y-1 px-3 py-4">
-          {navItems.map((item) => (
-            <Link
-              key={item.href}
-              href={item.href}
-              className="block rounded-md px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900"
-            >
-              {item.label}
-            </Link>
+        <nav className="flex-1 space-y-4 overflow-y-auto px-3 py-4">
+          {navSections.map((section, i) => (
+            <div key={section.title ?? i}>
+              {section.title ? (
+                <p className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-wide text-slate-400">{section.title}</p>
+              ) : null}
+              <div className="space-y-0.5">
+                {section.items.map((item) => (
+                  <Link
+                    key={item.href}
+                    href={item.href}
+                    className="block rounded-md px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-100 hover:text-slate-900"
+                  >
+                    {item.label}
+                  </Link>
+                ))}
+              </div>
+            </div>
           ))}
         </nav>
       </aside>

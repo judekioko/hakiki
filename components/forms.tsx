@@ -1,72 +1,20 @@
 "use client";
 
-import { startTransition, useActionState, type FormEvent } from "react";
-import { useFormStatus } from "react-dom";
-import { Button } from "@/components/ui/button";
+import { useState } from "react";
 import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
 import { Select } from "@/components/ui/select";
-import { Alert } from "@/components/ui/alert";
 import { loginAction, signupAction } from "@/lib/actions/auth";
 import { createBusiness, updateBusiness } from "@/lib/actions/businesses";
 import { importStatement, createPayment } from "@/lib/actions/payments";
 import { createInvoice } from "@/lib/actions/invoices";
 import { createSupplier, updateSupplier } from "@/lib/actions/suppliers";
 import { autoMatchAction } from "@/lib/actions/matching";
-import type { ActionState } from "@/lib/actions/types";
+import { AccountSelect, Feedback, Field, SubmitButton, useFormAction, type AccountOption, type Option } from "./form-kit";
+import { LineItemsEditor, type EditorItem, type EditorTaxRate } from "./line-items-editor";
 
-const empty: ActionState = {};
+export { SubmitButton };
 
-// Submits through onSubmit rather than <form action> so React does not clear the fields when validation fails.
-function useFormAction(fn: (prev: ActionState, formData: FormData) => Promise<ActionState>) {
-  const [state, dispatch, pending] = useActionState(fn, empty);
-  const onSubmit = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    const formData = new FormData(event.currentTarget);
-    startTransition(() => dispatch(formData));
-  };
-  return { state, onSubmit, pending };
-}
-
-export function SubmitButton({
-  children,
-  pendingText,
-  variant,
-  size,
-  className,
-  pending: pendingProp,
-}: {
-  children: React.ReactNode;
-  pending?: boolean;
-  pendingText?: string;
-  variant?: "primary" | "secondary" | "danger" | "ghost";
-  size?: "sm" | "md";
-  className?: string;
-}) {
-  const status = useFormStatus();
-  const pending = pendingProp ?? status.pending;
-  return (
-    <Button type="submit" disabled={pending} variant={variant} size={size} className={className}>
-      {pending ? (pendingText ?? "Saving...") : children}
-    </Button>
-  );
-}
-
-function Feedback({ state }: { state: ActionState }) {
-  if (state.error) return <Alert variant="error">{state.error}</Alert>;
-  if (state.success) return <Alert variant="success">{state.success}</Alert>;
-  return null;
-}
-
-function Field({ label, htmlFor, hint, children }: { label: string; htmlFor: string; hint?: string; children: React.ReactNode }) {
-  return (
-    <div>
-      <Label htmlFor={htmlFor}>{label}</Label>
-      {children}
-      {hint ? <p className="mt-1 text-xs text-slate-500">{hint}</p> : null}
-    </div>
-  );
-}
+export type CountryOption = { code: string; name: string; currency: string; taxIdLabel: string };
 
 export function LoginForm({ from }: { from?: string }) {
   const { state, onSubmit, pending } = useFormAction(loginAction);
@@ -87,8 +35,24 @@ export function LoginForm({ from }: { from?: string }) {
   );
 }
 
-export function SignupForm() {
+function CountryField({ countries, defaultCountry, onChange }: { countries: CountryOption[]; defaultCountry: string; onChange: (code: string) => void }) {
+  return (
+    <Field label="Country" htmlFor="country" hint="Sets your currency, tax rates and wording. It cannot be changed later.">
+      <Select id="country" name="country" defaultValue={defaultCountry} onChange={(e) => onChange(e.target.value)}>
+        {countries.map((c) => (
+          <option key={c.code} value={c.code}>
+            {c.name} ({c.currency})
+          </option>
+        ))}
+      </Select>
+    </Field>
+  );
+}
+
+export function SignupForm({ countries }: { countries: CountryOption[] }) {
   const { state, onSubmit, pending } = useFormAction(signupAction);
+  const [country, setCountry] = useState("KE");
+  const taxIdLabel = countries.find((c) => c.code === country)?.taxIdLabel ?? "Tax number";
   return (
     <form onSubmit={onSubmit} className="space-y-4">
       <Feedback state={state} />
@@ -104,8 +68,9 @@ export function SignupForm() {
       <Field label="Business name" htmlFor="businessName">
         <Input id="businessName" name="businessName" required />
       </Field>
-      <Field label="Business KRA PIN (optional)" htmlFor="kraPin">
-        <Input id="kraPin" name="kraPin" placeholder="P051234567X" className="uppercase" />
+      <CountryField countries={countries} defaultCountry="KE" onChange={setCountry} />
+      <Field label={`Business ${taxIdLabel} (optional)`} htmlFor="taxId">
+        <Input id="taxId" name="taxId" placeholder={country === "KE" ? "P051234567X" : undefined} className="uppercase" />
       </Field>
       <SubmitButton pending={pending} className="w-full" pendingText="Creating account...">
         Create free account
@@ -118,28 +83,64 @@ const MONTHS = ["January", "February", "March", "April", "May", "June", "July", 
 
 export function BusinessForm({
   mode,
+  countries,
   defaults,
 }: {
   mode: "create" | "edit";
-  defaults?: { name: string; kraPin: string | null; incomeTaxRate: number; yearEndMonth: number };
+  countries: CountryOption[];
+  defaults?: {
+    name: string;
+    country: string;
+    kraPin: string | null;
+    incomeTaxRate: number;
+    yearEndMonth: number;
+    vatRegistered: boolean;
+    address: string | null;
+    phone: string | null;
+    email: string | null;
+    invoiceFooter: string | null;
+  };
 }) {
   const { state, onSubmit, pending } = useFormAction(mode === "create" ? createBusiness : updateBusiness);
+  const [country, setCountry] = useState(defaults?.country ?? "KE");
+  const pack = countries.find((c) => c.code === country);
   return (
     <form onSubmit={onSubmit} className="space-y-4">
       <Feedback state={state} />
       <Field label="Business name" htmlFor="name">
         <Input id="name" name="name" defaultValue={defaults?.name} required />
       </Field>
-      <Field label="KRA PIN" htmlFor="kraPin">
-        <Input id="kraPin" name="kraPin" defaultValue={defaults?.kraPin ?? ""} placeholder="P051234567X" className="uppercase" />
+      {mode === "create" ? (
+        <CountryField countries={countries} defaultCountry={country} onChange={setCountry} />
+      ) : (
+        <p className="text-sm text-slate-600">
+          Country: <strong>{pack?.name}</strong> · Currency: <strong>{pack?.currency}</strong>
+        </p>
+      )}
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Field label={pack?.taxIdLabel ?? "Tax number"} htmlFor="taxId">
+          <Input id="taxId" name="taxId" defaultValue={defaults?.kraPin ?? ""} className="uppercase" />
+        </Field>
+        <label className="flex items-center gap-2 pt-6 text-sm text-slate-700">
+          <input type="checkbox" name="vatRegistered" defaultChecked={defaults?.vatRegistered ?? true} />
+          Registered for VAT
+        </label>
+        <Field label="Phone" htmlFor="phone">
+          <Input id="phone" name="phone" defaultValue={defaults?.phone ?? ""} />
+        </Field>
+        <Field label="Email" htmlFor="email">
+          <Input id="email" name="email" type="email" defaultValue={defaults?.email ?? ""} />
+        </Field>
+      </div>
+      <Field label="Address (shown on invoices)" htmlFor="address">
+        <Input id="address" name="address" defaultValue={defaults?.address ?? ""} />
+      </Field>
+      <Field label="Invoice footer" htmlFor="invoiceFooter" hint="Payment details, e.g. Paybill 123456, Account: invoice number">
+        <Input id="invoiceFooter" name="invoiceFooter" defaultValue={defaults?.invoiceFooter ?? ""} />
       </Field>
       <div className="grid gap-4 sm:grid-cols-2">
-        <Field
-          label="Income tax rate (%)"
-          htmlFor="incomeTaxRate"
-          hint="Used to estimate tax at risk. 30% for companies; use your top band for individuals."
-        >
-          <Input id="incomeTaxRate" name="incomeTaxRate" type="number" step="0.01" min={0} max={100} defaultValue={defaults?.incomeTaxRate ?? 30} />
+        <Field label="Income tax rate (%)" htmlFor="incomeTaxRate" hint="Used to estimate the tax cost of expenses without a valid tax invoice.">
+          <Input id="incomeTaxRate" name="incomeTaxRate" type="number" step="0.01" min={0} max={100} defaultValue={defaults?.incomeTaxRate} />
         </Field>
         <Field label="Financial year ends in" htmlFor="yearEndMonth">
           <Select id="yearEndMonth" name="yearEndMonth" defaultValue={defaults?.yearEndMonth ?? 12}>
@@ -164,51 +165,73 @@ export function BusinessForm({
   );
 }
 
-export function ImportForm() {
+export type MoneyAccountOption = { id: string; name: string; kind: string };
+
+function MoneyAccountField({ accounts, label, defaultValue }: { accounts: MoneyAccountOption[]; label: string; defaultValue?: string }) {
+  return (
+    <Field label={label} htmlFor="moneyAccountId">
+      <Select id="moneyAccountId" name="moneyAccountId" defaultValue={defaultValue ?? accounts[0]?.id}>
+        {accounts.map((a) => (
+          <option key={a.id} value={a.id}>
+            {a.name}
+          </option>
+        ))}
+      </Select>
+    </Field>
+  );
+}
+
+export function ImportForm({ moneyAccounts }: { moneyAccounts: MoneyAccountOption[] }) {
   const { state, onSubmit, pending } = useFormAction(importStatement);
+  const mobile = moneyAccounts.find((a) => a.kind === "MOBILE_MONEY");
   return (
     <form onSubmit={onSubmit} className="space-y-4">
       <Feedback state={state} />
-      <Field label="Statement type" htmlFor="source">
-        <Select id="source" name="source" defaultValue="MPESA">
-          <option value="MPESA">M-Pesa (till, paybill or business statement)</option>
-          <option value="BANK">Bank statement</option>
-        </Select>
-      </Field>
-      <Field label="CSV file" htmlFor="file" hint="Only money paid out is imported. Re-importing the same statement skips payments already added.">
+      <MoneyAccountField accounts={moneyAccounts} label="Statement for account" defaultValue={mobile?.id} />
+      <Field label="CSV file" htmlFor="file" hint="Re-importing the same statement skips transactions already added.">
         <Input id="file" name="file" type="file" accept=".csv,text/csv" required />
       </Field>
-      <SubmitButton pending={pending} pendingText="Importing...">Import payments</SubmitButton>
+      <label className="flex items-center gap-2 text-sm text-slate-700">
+        <input type="checkbox" name="includeIncoming" defaultChecked />
+        Also import money received (customer payments)
+      </label>
+      <SubmitButton pending={pending} pendingText="Importing...">
+        Import statement
+      </SubmitButton>
     </form>
   );
 }
 
-export function PaymentForm({ today }: { today: string }) {
+export function PaymentForm({
+  today,
+  moneyAccounts,
+  categories,
+}: {
+  today: string;
+  moneyAccounts: MoneyAccountOption[];
+  categories: AccountOption[];
+}) {
   const { state, onSubmit, pending } = useFormAction(createPayment);
   return (
     <form onSubmit={onSubmit} className="space-y-4">
       <Feedback state={state} />
       <div className="grid gap-4 sm:grid-cols-2">
-        <Field label="Paid with" htmlFor="source">
-          <Select id="source" name="source" defaultValue="CASH">
-            <option value="CASH">Cash</option>
-            <option value="MPESA">M-Pesa</option>
-            <option value="BANK">Bank</option>
-            <option value="OTHER">Other</option>
-          </Select>
-        </Field>
+        <MoneyAccountField accounts={moneyAccounts} label="Paid from" defaultValue={moneyAccounts.find((a) => a.kind === "CASH")?.id} />
         <Field label="Date paid" htmlFor="paidAt">
           <Input id="paidAt" name="paidAt" type="date" defaultValue={today} required />
         </Field>
-        <Field label="Amount (KES)" htmlFor="amount">
+        <Field label="Amount" htmlFor="amount">
           <Input id="amount" name="amount" type="number" step="0.01" min="0.01" required />
         </Field>
-        <Field label="Reference (optional)" htmlFor="reference" hint="M-Pesa code, cheque or bank reference">
+        <Field label="Reference (optional)" htmlFor="reference" hint="Transaction code, cheque or bank reference">
           <Input id="reference" name="reference" className="uppercase" />
         </Field>
       </div>
       <Field label="Paid to" htmlFor="counterparty">
         <Input id="counterparty" name="counterparty" required />
+      </Field>
+      <Field label="Category" htmlFor="categoryAccountId" hint="Leave as uncategorised if a supplier bill will cover it.">
+        <AccountSelect id="categoryAccountId" name="categoryAccountId" accounts={categories} placeholder="Uncategorised / to be matched to a bill" />
       </Field>
       <Field label="What was it for? (optional)" htmlFor="details">
         <Input id="details" name="details" />
@@ -223,18 +246,31 @@ export function InvoiceForm({
   defaults,
   paymentId,
   today,
+  taxIdLabel,
+  taxInvoiceLabel,
+  categories,
+  items,
+  taxRates,
+  allowLines = false,
 }: {
-  suppliers: { id: string; name: string }[];
+  suppliers: Option[];
   defaults?: { supplierId?: string; supplierName?: string; amount?: number; date?: string };
   paymentId?: string;
   today: string;
+  taxIdLabel: string;
+  taxInvoiceLabel: string;
+  categories: AccountOption[];
+  items?: EditorItem[];
+  taxRates?: EditorTaxRate[];
+  allowLines?: boolean;
 }) {
   const { state, onSubmit, pending } = useFormAction(createInvoice);
+  const [mode, setMode] = useState<"total" | "lines">("total");
   return (
     <form onSubmit={onSubmit} className="space-y-4">
       <Feedback state={state} />
       <input type="hidden" name="paymentId" value={paymentId ?? ""} />
-      <Field label="eTIMS invoice number" htmlFor="invoiceNumber" hint="The control unit (CU) invoice number printed on the invoice">
+      <Field label={`${taxInvoiceLabel} number`} htmlFor="invoiceNumber" hint="As printed on the supplier's invoice">
         <Input id="invoiceNumber" name="invoiceNumber" required className="uppercase" />
       </Field>
       <div className="grid gap-4 sm:grid-cols-2">
@@ -251,26 +287,51 @@ export function InvoiceForm({
         <Field label="New supplier name" htmlFor="supplierName" hint="Leave blank if you picked a supplier">
           <Input id="supplierName" name="supplierName" defaultValue={defaults?.supplierName ?? ""} />
         </Field>
-        <Field label="Supplier KRA PIN" htmlFor="supplierPin">
-          <Input id="supplierPin" name="supplierPin" placeholder="P051234567X" className="uppercase" />
+        <Field label={`Supplier ${taxIdLabel}`} htmlFor="supplierPin">
+          <Input id="supplierPin" name="supplierPin" className="uppercase" />
         </Field>
         <Field label="Invoice date" htmlFor="invoiceDate">
           <Input id="invoiceDate" name="invoiceDate" type="date" defaultValue={defaults?.date ?? today} required />
         </Field>
-        <Field label="Total incl. VAT (KES)" htmlFor="totalAmount">
-          <Input id="totalAmount" name="totalAmount" type="number" step="0.01" min="0.01" defaultValue={defaults?.amount} required />
+        <Field label="Due date (optional)" htmlFor="dueDate">
+          <Input id="dueDate" name="dueDate" type="date" />
         </Field>
-        <Field label="VAT (KES)" htmlFor="vatAmount" hint="0 if the supplier is not VAT registered">
-          <Input id="vatAmount" name="vatAmount" type="number" step="0.01" min="0" defaultValue={0} />
+        <Field label="Expense category" htmlFor="categoryAccountId">
+          <AccountSelect id="categoryAccountId" name="categoryAccountId" accounts={categories} placeholder="Uncategorised expense" />
         </Field>
       </div>
+
+      {allowLines ? (
+        <div className="flex gap-2 text-sm">
+          <button type="button" onClick={() => setMode("total")} className={mode === "total" ? "font-semibold text-teal-700" : "text-slate-500"}>
+            Enter total only
+          </button>
+          <span className="text-slate-300">|</span>
+          <button type="button" onClick={() => setMode("lines")} className={mode === "lines" ? "font-semibold text-teal-700" : "text-slate-500"}>
+            Enter line items (stock purchases)
+          </button>
+        </div>
+      ) : null}
+
+      {mode === "lines" && items && taxRates ? (
+        <LineItemsEditor side="purchase" items={items} taxRates={taxRates} accounts={categories} chargeTax />
+      ) : (
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="Total incl. VAT" htmlFor="totalAmount">
+            <Input id="totalAmount" name="totalAmount" type="number" step="0.01" min="0.01" defaultValue={defaults?.amount} required />
+          </Field>
+          <Field label="VAT included" htmlFor="vatAmount" hint="0 if the supplier is not VAT registered">
+            <Input id="vatAmount" name="vatAmount" type="number" step="0.01" min="0" defaultValue={0} />
+          </Field>
+        </div>
+      )}
       <Field label="What was bought? (optional)" htmlFor="description">
         <Input id="description" name="description" />
       </Field>
-      <Field label="Invoice photo or PDF (optional)" htmlFor="file" hint="Up to 5 MB. Kept so you can show KRA the original.">
+      <Field label="Invoice photo or PDF (optional)" htmlFor="file" hint="Up to 5 MB. Kept so you can show the tax authority the original.">
         <Input id="file" name="file" type="file" accept="application/pdf,image/jpeg,image/png,image/webp" capture="environment" />
       </Field>
-      <SubmitButton pending={pending}>Save invoice</SubmitButton>
+      <SubmitButton pending={pending}>Save bill</SubmitButton>
     </form>
   );
 }
@@ -280,11 +341,13 @@ export function SupplierForm({
   defaults,
   supplierId,
   paymentId,
+  taxIdLabel = "Tax number",
 }: {
   mode: "create" | "edit";
   defaults?: { name: string; kraPin: string | null; phone: string | null };
   supplierId?: string;
   paymentId?: string;
+  taxIdLabel?: string;
 }) {
   const { state, onSubmit, pending } = useFormAction(mode === "create" ? createSupplier : updateSupplier);
   return (
@@ -296,7 +359,7 @@ export function SupplierForm({
         <Input id="name" name="name" defaultValue={defaults?.name} required />
       </Field>
       <div className="grid gap-4 sm:grid-cols-2">
-        <Field label="KRA PIN" htmlFor="kraPin">
+        <Field label={taxIdLabel} htmlFor="kraPin">
           <Input id="kraPin" name="kraPin" defaultValue={defaults?.kraPin ?? ""} className="uppercase" />
         </Field>
         <Field label="WhatsApp number" htmlFor="phone" hint="Used to request missing invoices">

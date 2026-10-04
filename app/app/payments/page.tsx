@@ -2,7 +2,8 @@ import Link from "next/link";
 import { requireBusiness } from "@/lib/business";
 import { loadPayments, type PaymentRow } from "@/lib/coverage";
 import { financialYear, parseYear, yearOptions } from "@/lib/periods";
-import { formatDate, formatKes } from "@/lib/format";
+import { formatDate } from "@/lib/format";
+import { businessContext } from "@/lib/form-options";
 import { EXEMPT_REASONS } from "@/lib/exemptions";
 import { bulkMarkExempt } from "@/lib/actions/payments";
 import { PageHeader } from "@/components/page-header";
@@ -29,6 +30,7 @@ export default async function PaymentsPage({
   searchParams: Promise<{ year?: string; status?: string; q?: string }>;
 }) {
   const { business } = await requireBusiness();
+  const { fmt, taxInvoiceLabel } = businessContext(business);
   const params = await searchParams;
   const year = parseYear(params.year, business.yearEndMonth);
   const period = financialYear(year, business.yearEndMonth);
@@ -48,7 +50,7 @@ export default async function PaymentsPage({
     <div className="space-y-5">
       <PageHeader
         title="Payments"
-        description={`Money paid out in ${period.label}. Each one needs an eTIMS invoice unless it is marked as not needed.`}
+        description={`Money paid out in ${period.label}. Each one needs a supplier ${taxInvoiceLabel} unless it is marked as not needed.`}
         action={
           <div className="flex flex-wrap items-start gap-2">
             <AutoMatchButton />
@@ -126,9 +128,9 @@ export default async function PaymentsPage({
                         : ""}
                     </p>
                   </Td>
-                  <Td className="whitespace-nowrap text-right">{formatKes(r.amount)}</Td>
+                  <Td className="whitespace-nowrap text-right">{fmt(r.amount)}</Td>
                   <Td className="whitespace-nowrap text-right">
-                    {r.unbacked > 0 ? <span className="text-rose-700">{formatKes(r.unbacked)}</span> : "—"}
+                    {r.unbacked > 0 ? <span className="text-rose-700">{fmt(r.unbacked)}</span> : "—"}
                   </Td>
                   <Td className="whitespace-nowrap">
                     <StatusBadge status={r.status} />

@@ -11,6 +11,8 @@ export type ParsedPayment = {
 
 export type ParseResult = {
   payments: ParsedPayment[];
+  // Money received (paid in / credit rows).
+  incoming: ParsedPayment[];
   skippedRows: number;
   incomingRows: number;
   columns: Record<ColumnKey, string | null>;
@@ -178,6 +180,7 @@ export function parseStatement(text: string): ParseResult {
 
   const header = rows[headerIndex];
   const payments: ParsedPayment[] = [];
+  const incoming: ParsedPayment[] = [];
   let skippedRows = 0;
   let incomingRows = 0;
   const cell = (row: string[], index: number) => (index === -1 ? undefined : row[index]);
@@ -191,42 +194,41 @@ export function parseStatement(text: string): ParseResult {
 
     const paidAt = parseStatementDate(cell(row, columns.date));
     let outgoing: number | null = null;
+    let received: number | null = null;
     if (columns.debit !== -1) {
       const debit = parseAmount(cell(row, columns.debit));
       if (debit) outgoing = Math.abs(debit);
+      const credit = parseAmount(cell(row, columns.credit));
+      if (!outgoing && credit) received = Math.abs(credit);
     } else {
       const amount = parseAmount(cell(row, columns.amount));
       if (amount !== null && amount < 0) outgoing = Math.abs(amount);
-      else if (amount !== null && amount > 0) {
-        incomingRows++;
-        continue;
-      }
+      else if (amount !== null && amount > 0) received = amount;
     }
 
-    if (!paidAt) {
+    if (!paidAt || (!outgoing && !received)) {
       skippedRows++;
-      continue;
-    }
-    if (!outgoing) {
-      const credit = parseAmount(cell(row, columns.credit));
-      if (credit) incomingRows++;
-      else skippedRows++;
       continue;
     }
 
     const details = cell(row, columns.details)?.trim() ?? "";
-    payments.push({
+    const parsedRow = {
       reference: cell(row, columns.reference)?.trim().toUpperCase() || null,
       paidAt,
-      amount: Math.round(outgoing * 100) / 100,
+      amount: Math.round((outgoing ?? received ?? 0) * 100) / 100,
       counterparty: extractCounterparty(details, cell(row, columns.counterparty)),
       details,
-    });
+    };
+    if (outgoing) payments.push(parsedRow);
+    else {
+      incoming.push(parsedRow);
+      incomingRows++;
+    }
   }
 
   const columnNames = {} as Record<ColumnKey, string | null>;
   for (const key of Object.keys(columns) as ColumnKey[]) {
     columnNames[key] = columns[key] === -1 ? null : header[columns[key]].trim();
   }
-  return { payments, skippedRows, incomingRows, columns: columnNames };
+  return { payments, incoming, skippedRows, incomingRows, columns: columnNames };
 }

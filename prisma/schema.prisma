@@ -20,7 +20,7 @@ enum PaymentSource {
   OTHER
 }
 
-// Why a payment does not need an eTIMS invoice. Labels and guidance live in lib/exemptions.ts.
+// Why a payment does not need a supplier tax invoice. Labels and guidance live in lib/exemptions.ts.
 enum ExemptReason {
   SALARIES
   IMPORTS
@@ -40,6 +40,53 @@ enum InvoiceStatus {
   REJECTED
 }
 
+enum AccountType {
+  ASSET
+  LIABILITY
+  EQUITY
+  INCOME
+  EXPENSE
+}
+
+// Bank, mobile money and cash accounts are where money actually moves.
+enum MoneyKind {
+  BANK
+  MOBILE_MONEY
+  CASH
+}
+
+enum ItemKind {
+  SERVICE
+  INVENTORY
+  NON_STOCK
+}
+
+enum SalesInvoiceStatus {
+  DRAFT
+  SENT
+  VOID
+}
+
+enum JournalSource {
+  SALES_INVOICE
+  RECEIPT
+  BILL
+  PAYMENT
+  PAYRUN
+  MANUAL
+  STOCK_ADJUSTMENT
+}
+
+enum PayrollParty {
+  EMPLOYEE
+  EMPLOYER
+}
+
+enum PayRunStatus {
+  DRAFT
+  APPROVED
+}
+
 model User {
   id           String       @id @default(cuid())
   email        String       @unique
@@ -50,19 +97,44 @@ model User {
 }
 
 model Business {
-  id            String          @id @default(cuid())
-  name          String
-  kraPin        String?
-  // Income tax rate applied to disallowed expenses when estimating tax at risk (30% for companies).
-  incomeTaxRate Decimal         @default(30) @db.Decimal(5, 2)
+  id                    String          @id @default(cuid())
+  name                  String
+  // Tax identification number (KRA PIN in Kenya, TIN elsewhere). Column name kept from the Kenya-only version.
+  kraPin                String?
+  // ISO country code; drives currency, tax defaults and wording (see lib/countries.ts).
+  country               String          @default("KE")
+  currency              String          @default("KES")
+  vatRegistered         Boolean         @default(true)
+  address               String?
+  phone                 String?
+  email                 String?
+  invoiceFooter         String?
+  // Income tax rate applied to unbacked expenses when estimating tax at risk (30% for Kenyan companies).
+  incomeTaxRate         Decimal         @default(30) @db.Decimal(5, 2)
   // Last month of the financial year (12 = December year end).
-  yearEndMonth  Int             @default(12)
-  createdAt     DateTime        @default(now())
-  memberships   Membership[]
-  suppliers     Supplier[]
-  invoices      Invoice[]
-  payments      Payment[]
-  importBatches ImportBatch[]
+  yearEndMonth          Int             @default(12)
+  // Monthly personal relief for the configurable payroll engine (countries without a built-in one).
+  payrollPersonalRelief Decimal         @default(0) @db.Decimal(14, 2)
+  // Set once the default chart of accounts and tax rates have been created.
+  booksReadyAt          DateTime?
+  createdAt             DateTime        @default(now())
+  memberships           Membership[]
+  suppliers             Supplier[]
+  invoices              Invoice[]
+  payments              Payment[]
+  importBatches         ImportBatch[]
+  accounts              Account[]
+  taxRates              TaxRate[]
+  journalEntries        JournalEntry[]
+  customers             Customer[]
+  items                 Item[]
+  stockMovements        StockMovement[]
+  salesInvoices         SalesInvoice[]
+  receipts              Receipt[]
+  employees             Employee[]
+  payrollRules          PayrollRule[]
+  incomeTaxBands        IncomeTaxBand[]
+  payRuns               PayRun[]
 }
 
 model Membership {
@@ -77,12 +149,75 @@ model Membership {
   @@unique([userId, businessId])
 }
 
+// ---------- Ledger ----------
+
+model Account {
+  id          String        @id @default(cuid())
+  businessId  String
+  code        String
+  name        String
+  type        AccountType
+  // Stable key for accounts the app posts to automatically, e.g. "AR", "AP", "VAT_OUT". Null for user accounts.
+  systemKey   String?
+  moneyKind   MoneyKind?
+  description String?
+  isArchived  Boolean       @default(false)
+  createdAt   DateTime      @default(now())
+  business    Business      @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  lines       JournalLine[]
+
+  @@unique([businessId, code])
+  @@unique([businessId, systemKey])
+}
+
+model JournalEntry {
+  id         String        @id @default(cuid())
+  businessId String
+  date       DateTime
+  memo       String
+  sourceType JournalSource
+  // Id of the document that produced this entry. Entries are rebuilt whenever the document changes.
+  sourceId   String?
+  createdAt  DateTime      @default(now())
+  business   Business      @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  lines      JournalLine[]
+
+  @@index([businessId, date])
+  @@index([businessId, sourceType, sourceId])
+}
+
+model JournalLine {
+  id          String       @id @default(cuid())
+  entryId     String
+  accountId   String
+  debit       Decimal      @default(0) @db.Decimal(16, 2)
+  credit      Decimal      @default(0) @db.Decimal(16, 2)
+  description String?
+  entry       JournalEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  account     Account      @relation(fields: [accountId], references: [id], onDelete: Cascade)
+
+  @@index([accountId])
+}
+
+model TaxRate {
+  id         String   @id @default(cuid())
+  businessId String
+  name       String
+  rate       Decimal  @db.Decimal(6, 3)
+  isDefault  Boolean  @default(false)
+  isArchived Boolean  @default(false)
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+}
+
+// ---------- Contacts ----------
+
 model Supplier {
   id         String    @id @default(cuid())
   businessId String
   name       String
   kraPin     String?
   phone      String?
+  email      String?
   // Other spellings seen on M-Pesa/bank statements, e.g. "JOHN SUPPLIES LTD", used for matching.
   aliases    String[]  @default([])
   createdAt  DateTime  @default(now())
@@ -93,36 +228,206 @@ model Supplier {
   @@index([businessId])
 }
 
-model Invoice {
-  id            String          @id @default(cuid())
+model Customer {
+  id            String         @id @default(cuid())
   businessId    String
-  supplierId    String?
-  // eTIMS control unit invoice number as printed on the invoice.
-  invoiceNumber String
-  supplierName  String
-  supplierPin   String?
-  invoiceDate   DateTime        @db.Date
-  totalAmount   Decimal         @db.Decimal(14, 2)
-  vatAmount     Decimal         @default(0) @db.Decimal(14, 2)
-  description   String?
-  status        InvoiceStatus   @default(UNVERIFIED)
-  fileName      String?
-  fileType      String?
-  fileData      Bytes?
-  createdAt     DateTime        @default(now())
-  business      Business        @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  supplier      Supplier?       @relation(fields: [supplierId], references: [id], onDelete: SetNull)
-  allocations   Allocation[]
+  name          String
+  taxId         String?
+  phone         String?
+  email         String?
+  address       String?
+  // Statement names this customer pays from, used to match incoming money.
+  aliases       String[]       @default([])
+  createdAt     DateTime       @default(now())
+  business      Business       @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  salesInvoices SalesInvoice[]
+  receipts      Receipt[]
+
+  @@index([businessId])
+}
+
+// ---------- Products & stock ----------
+
+model Item {
+  id               String             @id @default(cuid())
+  businessId       String
+  name             String
+  sku              String?
+  kind             ItemKind           @default(SERVICE)
+  unit             String?
+  salePrice        Decimal            @default(0) @db.Decimal(14, 2)
+  purchasePrice    Decimal            @default(0) @db.Decimal(14, 2)
+  taxRateId        String?
+  incomeAccountId  String?
+  expenseAccountId String?
+  reorderLevel     Decimal?           @db.Decimal(14, 3)
+  isArchived       Boolean            @default(false)
+  createdAt        DateTime           @default(now())
+  business         Business           @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  movements        StockMovement[]
+  salesLines       SalesInvoiceLine[]
+  billLines        BillLine[]
+
+  @@index([businessId])
+}
+
+model StockMovement {
+  id         String        @id @default(cuid())
+  businessId String
+  itemId     String
+  date       DateTime
+  // Positive for stock in, negative for stock out.
+  quantity   Decimal       @db.Decimal(14, 3)
+  unitCost   Decimal       @db.Decimal(14, 4)
+  sourceType JournalSource
+  sourceId   String?
+  note       String?
+  createdAt  DateTime      @default(now())
+  business   Business      @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  item       Item          @relation(fields: [itemId], references: [id], onDelete: Cascade)
+
+  @@index([businessId, itemId, date])
+  @@index([sourceType, sourceId])
+}
+
+// ---------- Sales ----------
+
+model SalesInvoice {
+  id               String              @id @default(cuid())
+  businessId       String
+  customerId       String
+  number           String
+  issueDate        DateTime            @db.Date
+  dueDate          DateTime            @db.Date
+  status           SalesInvoiceStatus  @default(DRAFT)
+  reference        String?
+  notes            String?
+  // Number from the national e-invoicing system (eTIMS, EFRIS, EBM...) once the invoice is registered there.
+  taxInvoiceNumber String?
+  subtotal         Decimal             @default(0) @db.Decimal(14, 2)
+  taxTotal         Decimal             @default(0) @db.Decimal(14, 2)
+  total            Decimal             @default(0) @db.Decimal(14, 2)
+  createdAt        DateTime            @default(now())
+  business         Business            @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  customer         Customer            @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  lines            SalesInvoiceLine[]
+  allocations      ReceiptAllocation[]
+
+  @@unique([businessId, number])
+  @@index([businessId, issueDate])
+}
+
+model SalesInvoiceLine {
+  id          String       @id @default(cuid())
+  invoiceId   String
+  itemId      String?
+  description String
+  quantity    Decimal      @db.Decimal(14, 3)
+  unitPrice   Decimal      @db.Decimal(14, 2)
+  // Rate copied at the time of sale so later rate changes do not alter old invoices.
+  taxRate     Decimal      @default(0) @db.Decimal(6, 3)
+  taxRateId   String?
+  accountId   String
+  lineTotal   Decimal      @db.Decimal(14, 2)
+  taxAmount   Decimal      @db.Decimal(14, 2)
+  position    Int          @default(0)
+  invoice     SalesInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  item        Item?        @relation(fields: [itemId], references: [id], onDelete: SetNull)
+}
+
+// Money received. Imported from statements (incoming rows) or entered by hand.
+model Receipt {
+  id                String              @id @default(cuid())
+  businessId        String
+  customerId        String?
+  moneyAccountId    String?
+  importBatchId     String?
+  source            PaymentSource
+  reference         String?
+  receivedAt        DateTime
+  amount            Decimal             @db.Decimal(14, 2)
+  payer             String
+  details           String?
+  // Where any amount not applied to invoices is booked (other income, loan received...). Defaults to other income.
+  categoryAccountId String?
+  createdAt         DateTime            @default(now())
+  business          Business            @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  customer          Customer?           @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  importBatch       ImportBatch?        @relation(fields: [importBatchId], references: [id], onDelete: SetNull)
+  allocations       ReceiptAllocation[]
+
+  @@unique([businessId, reference])
+  @@index([businessId, receivedAt])
+}
+
+model ReceiptAllocation {
+  id        String       @id @default(cuid())
+  receiptId String
+  invoiceId String
+  amount    Decimal      @db.Decimal(14, 2)
+  createdAt DateTime     @default(now())
+  receipt   Receipt      @relation(fields: [receiptId], references: [id], onDelete: Cascade)
+  invoice   SalesInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@unique([receiptId, invoiceId])
+}
+
+// ---------- Purchases ----------
+
+// A supplier bill / tax invoice received. Named Invoice from the expense-checker version of the app.
+model Invoice {
+  id                String        @id @default(cuid())
+  businessId        String
+  supplierId        String?
+  // Tax invoice number as printed by the supplier's e-invoicing device (eTIMS CU number in Kenya).
+  invoiceNumber     String
+  supplierName      String
+  supplierPin       String?
+  invoiceDate       DateTime      @db.Date
+  dueDate           DateTime?     @db.Date
+  totalAmount       Decimal       @db.Decimal(14, 2)
+  vatAmount         Decimal       @default(0) @db.Decimal(14, 2)
+  description       String?
+  // Expense account used when the bill has no lines.
+  categoryAccountId String?
+  status            InvoiceStatus @default(UNVERIFIED)
+  fileName          String?
+  fileType          String?
+  fileData          Bytes?
+  createdAt         DateTime      @default(now())
+  business          Business      @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  supplier          Supplier?     @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  allocations       Allocation[]
+  lines             BillLine[]
 
   @@unique([businessId, invoiceNumber])
   @@index([businessId, invoiceDate])
 }
 
+model BillLine {
+  id          String  @id @default(cuid())
+  invoiceId   String
+  itemId      String?
+  description String
+  quantity    Decimal @db.Decimal(14, 3)
+  unitPrice   Decimal @db.Decimal(14, 2)
+  taxRate     Decimal @default(0) @db.Decimal(6, 3)
+  taxRateId   String?
+  accountId   String
+  lineTotal   Decimal @db.Decimal(14, 2)
+  taxAmount   Decimal @db.Decimal(14, 2)
+  position    Int     @default(0)
+  invoice     Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  item        Item?   @relation(fields: [itemId], references: [id], onDelete: SetNull)
+}
+
+// Money paid out.
 model Payment {
   id                 String        @id @default(cuid())
   businessId         String
   supplierId         String?
   importBatchId      String?
+  moneyAccountId     String?
   source             PaymentSource
   // M-Pesa receipt number or bank reference. Used to skip duplicates on re-import.
   reference          String?
@@ -130,6 +435,8 @@ model Payment {
   amount             Decimal       @db.Decimal(14, 2)
   counterparty       String
   details            String?
+  // Expense or liability account for any amount not applied to bills.
+  categoryAccountId  String?
   exemptReason       ExemptReason?
   exemptNote         String?
   invoiceRequestedAt DateTime?
@@ -143,8 +450,8 @@ model Payment {
   @@index([businessId, paidAt])
 }
 
-// Links part or all of a payment to part or all of an invoice.
-// One invoice can be paid in instalments, and one payment can settle several invoices.
+// Links part or all of a payment to part or all of a bill.
+// One bill can be paid in instalments, and one payment can settle several bills.
 model Allocation {
   id        String   @id @default(cuid())
   paymentId String
@@ -158,13 +465,100 @@ model Allocation {
 }
 
 model ImportBatch {
-  id         String        @id @default(cuid())
+  id             String        @id @default(cuid())
+  businessId     String
+  source         PaymentSource
+  moneyAccountId String?
+  fileName       String
+  imported       Int
+  skipped        Int
+  createdAt      DateTime      @default(now())
+  business       Business      @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  payments       Payment[]
+  receipts       Receipt[]
+}
+
+// ---------- Payroll ----------
+
+model Employee {
+  id             String    @id @default(cuid())
+  businessId     String
+  name           String
+  employeeNumber String?
+  nationalId     String?
+  taxId          String?
+  pensionNumber  String?
+  healthNumber   String?
+  phone          String?
+  email          String?
+  jobTitle       String?
+  basicSalary    Decimal   @db.Decimal(14, 2)
+  allowances     Decimal   @default(0) @db.Decimal(14, 2)
+  startDate      DateTime? @db.Date
+  isActive       Boolean   @default(true)
+  createdAt      DateTime  @default(now())
+  business       Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  payslips       Payslip[]
+
+  @@index([businessId])
+}
+
+// A statutory or voluntary deduction for countries without a built-in payroll engine.
+model PayrollRule {
+  id          String       @id @default(cuid())
+  businessId  String
+  name        String
+  party       PayrollParty
+  // Percentage of gross pay, applied to gross capped at maxBase, then capped at maxAmount.
+  rate        Decimal      @default(0) @db.Decimal(6, 3)
+  fixedAmount Decimal      @default(0) @db.Decimal(14, 2)
+  maxBase     Decimal?     @db.Decimal(14, 2)
+  maxAmount   Decimal?     @db.Decimal(14, 2)
+  // Employee deductions that reduce taxable income (e.g. pension contributions).
+  preTax      Boolean      @default(false)
+  position    Int          @default(0)
+  business    Business     @relation(fields: [businessId], references: [id], onDelete: Cascade)
+}
+
+// Monthly income tax bands for the configurable payroll engine. upTo null means "everything above".
+model IncomeTaxBand {
+  id         String   @id @default(cuid())
   businessId String
-  source     PaymentSource
-  fileName   String
-  imported   Int
-  skipped    Int
-  createdAt  DateTime      @default(now())
-  business   Business      @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  payments   Payment[]
+  upTo       Decimal? @db.Decimal(14, 2)
+  rate       Decimal  @db.Decimal(6, 3)
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+}
+
+model PayRun {
+  id         String       @id @default(cuid())
+  businessId String
+  // Calendar month the pay is for, e.g. "2026-09".
+  period     String
+  payDate    DateTime     @db.Date
+  status     PayRunStatus @default(DRAFT)
+  createdAt  DateTime     @default(now())
+  business   Business     @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  payslips   Payslip[]
+
+  @@unique([businessId, period])
+}
+
+model Payslip {
+  id                    String   @id @default(cuid())
+  payRunId              String
+  employeeId            String
+  basicSalary           Decimal  @db.Decimal(14, 2)
+  allowances            Decimal  @db.Decimal(14, 2)
+  gross                 Decimal  @db.Decimal(14, 2)
+  taxableIncome         Decimal  @db.Decimal(14, 2)
+  incomeTax             Decimal  @db.Decimal(14, 2)
+  employeeDeductions    Decimal  @db.Decimal(14, 2)
+  employerContributions Decimal  @db.Decimal(14, 2)
+  net                   Decimal  @db.Decimal(14, 2)
+  // Line-by-line calculation, shown on the payslip: [{ label, amount, party }].
+  breakdown             Json
+  payRun                PayRun   @relation(fields: [payRunId], references: [id], onDelete: Cascade)
+  employee              Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@unique([payRunId, employeeId])
 }

@@ -8,6 +8,9 @@ import { parseStatement } from "@/lib/statement-import";
 import { normaliseAlias } from "@/lib/matching";
 import { aliasIndex } from "@/lib/suppliers";
 import { runAutoMatch } from "@/lib/auto-match";
+import { runReceiptAutoMatch } from "@/lib/receipt-match";
+import { postPayment, postReceipt } from "@/lib/ledger";
+import { sourceForMoneyAccount } from "@/lib/money-accounts";
 import { exemptSchema, firstError, paymentSchema } from "@/lib/validators";
 import type { ActionState } from "./types";
 
@@ -17,10 +20,18 @@ function revalidateAll() {
   revalidatePath("/app", "layout");
 }
 
+async function resolveMoneyAccount(businessId: string, moneyAccountId: FormDataEntryValue | null) {
+  if (typeof moneyAccountId !== "string" || !moneyAccountId) return null;
+  return prisma.account.findFirst({ where: { id: moneyAccountId, businessId, moneyKind: { not: null } } });
+}
+
 export async function importStatement(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const { business } = await requireBusiness();
   const file = formData.get("file");
-  const source = formData.get("source") === "BANK" ? "BANK" : "MPESA";
+  const account = await resolveMoneyAccount(business.id, formData.get("moneyAccountId"));
+  if (!account) return { error: "Choose which account this statement is for" };
+  const source = sourceForMoneyAccount(account);
+  const includeIncoming = formData.get("includeIncoming") === "on";
 
   if (!(file instanceof File) || file.size === 0) return { error: "Choose a CSV file to import" };
   if (file.size > MAX_STATEMENT_BYTES) return { error: "The file is larger than 5 MB" };
@@ -36,67 +47,101 @@ export async function importStatement(_prev: ActionState, formData: FormData): P
   } catch (err) {
     return { error: err instanceof Error ? err.message : "Could not read the file" };
   }
-  if (parsed.payments.length === 0) {
-    return { error: "No outgoing payments were found in this file." };
+  if (parsed.payments.length === 0 && (!includeIncoming || parsed.incoming.length === 0)) {
+    return { error: "No transactions were found in this file." };
   }
 
-  const references = parsed.payments.map((p) => p.reference).filter((r): r is string => !!r);
-  const existing = new Set(
-    (
-      await prisma.payment.findMany({
-        where: { businessId: business.id, reference: { in: references } },
-        select: { reference: true },
-      })
-    ).map((p) => p.reference)
-  );
-  const aliases = await aliasIndex(business.id);
-  const seen = new Set<string>();
-  const fresh = parsed.payments.filter((p) => {
-    if (!p.reference) return true;
-    if (existing.has(p.reference) || seen.has(p.reference)) return false;
-    seen.add(p.reference);
-    return true;
-  });
-  const duplicates = parsed.payments.length - fresh.length;
-
   const batch = await prisma.importBatch.create({
-    data: {
-      businessId: business.id,
-      source,
-      fileName: file.name,
-      imported: fresh.length,
-      skipped: duplicates + parsed.skippedRows,
-    },
+    data: { businessId: business.id, source, moneyAccountId: account.id, fileName: file.name, imported: 0, skipped: 0 },
   });
+
+  // Money out
+  const outRefs = parsed.payments.map((p) => p.reference).filter((r): r is string => !!r);
+  const existingOut = new Set(
+    (await prisma.payment.findMany({ where: { businessId: business.id, reference: { in: outRefs } }, select: { reference: true } })).map((p) => p.reference)
+  );
+  const supplierAliases = await aliasIndex(business.id);
+  const freshOut = dedupe(parsed.payments, existingOut);
   await prisma.payment.createMany({
-    data: fresh.map((p) => ({
+    data: freshOut.map((p) => ({
       businessId: business.id,
       importBatchId: batch.id,
+      moneyAccountId: account.id,
       source,
       reference: p.reference,
       paidAt: p.paidAt,
       amount: p.amount,
       counterparty: p.counterparty,
       details: p.details || null,
-      supplierId: aliases.get(normaliseAlias(p.counterparty)) ?? null,
+      supplierId: supplierAliases.get(normaliseAlias(p.counterparty)) ?? null,
     })),
   });
 
+  // Money in
+  let freshIn: typeof parsed.incoming = [];
+  if (includeIncoming) {
+    const inRefs = parsed.incoming.map((p) => p.reference).filter((r): r is string => !!r);
+    const existingIn = new Set(
+      (await prisma.receipt.findMany({ where: { businessId: business.id, reference: { in: inRefs } }, select: { reference: true } })).map((r) => r.reference)
+    );
+    const customers = await prisma.customer.findMany({ where: { businessId: business.id }, select: { id: true, aliases: true } });
+    const customerAliases = new Map<string, string>();
+    for (const c of customers) for (const a of c.aliases) customerAliases.set(a, c.id);
+    freshIn = dedupe(parsed.incoming, existingIn);
+    await prisma.receipt.createMany({
+      data: freshIn.map((p) => ({
+        businessId: business.id,
+        importBatchId: batch.id,
+        moneyAccountId: account.id,
+        source,
+        reference: p.reference,
+        receivedAt: p.paidAt,
+        amount: p.amount,
+        payer: p.counterparty,
+        details: p.details || null,
+        customerId: customerAliases.get(normaliseAlias(p.counterparty)) ?? null,
+      })),
+    });
+  }
+
+  const skipped = parsed.payments.length - freshOut.length + (includeIncoming ? parsed.incoming.length - freshIn.length : 0) + parsed.skippedRows;
+  await prisma.importBatch.update({ where: { id: batch.id }, data: { imported: freshOut.length + freshIn.length, skipped } });
+
+  const [newPayments, newReceipts] = await Promise.all([
+    prisma.payment.findMany({ where: { importBatchId: batch.id }, select: { id: true } }),
+    prisma.receipt.findMany({ where: { importBatchId: batch.id }, select: { id: true } }),
+  ]);
+  for (const p of newPayments) await postPayment(p.id);
+  for (const r of newReceipts) await postReceipt(r.id);
+
   const matched = await runAutoMatch(business.id);
+  const matchedIn = await runReceiptAutoMatch(business.id);
   revalidateAll();
 
-  const parts = [`Imported ${fresh.length} payment${fresh.length === 1 ? "" : "s"}`];
-  if (duplicates) parts.push(`${duplicates} already imported`);
-  if (parsed.incomingRows) parts.push(`${parsed.incomingRows} incoming ignored`);
-  if (parsed.skippedRows) parts.push(`${parsed.skippedRows} rows skipped`);
-  if (matched) parts.push(`${matched} matched to invoices automatically`);
+  const parts = [`Imported ${freshOut.length} payment${freshOut.length === 1 ? "" : "s"} out`];
+  if (includeIncoming) parts.push(`${freshIn.length} received`);
+  else if (parsed.incomingRows) parts.push(`${parsed.incomingRows} incoming ignored`);
+  if (skipped) parts.push(`${skipped} skipped or already imported`);
+  if (matched + matchedIn) parts.push(`${matched + matchedIn} matched automatically`);
   return { success: parts.join(" · ") };
+}
+
+function dedupe<T extends { reference: string | null }>(rows: T[], existing: Set<string | null>): T[] {
+  const seen = new Set<string>();
+  return rows.filter((p) => {
+    if (!p.reference) return true;
+    if (existing.has(p.reference) || seen.has(p.reference)) return false;
+    seen.add(p.reference);
+    return true;
+  });
 }
 
 export async function createPayment(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const { business } = await requireBusiness();
+  const account = await resolveMoneyAccount(business.id, formData.get("moneyAccountId"));
+  if (!account) return { error: "Choose the account the money was paid from" };
   const parsed = paymentSchema.safeParse({
-    source: formData.get("source"),
+    source: sourceForMoneyAccount(account),
     reference: formData.get("reference") ?? "",
     paidAt: formData.get("paidAt"),
     amount: formData.get("amount"),
@@ -111,23 +156,45 @@ export async function createPayment(_prev: ActionState, formData: FormData): Pro
     const duplicate = await prisma.payment.findFirst({ where: { businessId: business.id, reference } });
     if (duplicate) return { error: `A payment with reference ${reference} already exists` };
   }
+  const categoryAccountId = await validCategory(business.id, formData.get("categoryAccountId"));
   const aliases = await aliasIndex(business.id);
   const payment = await prisma.payment.create({
     data: {
       businessId: business.id,
       source: data.source,
+      moneyAccountId: account.id,
       reference,
       // Noon Nairobi time keeps manually entered dates on the right day.
       paidAt: new Date(`${data.paidAt}T12:00:00+03:00`),
       amount: data.amount,
       counterparty: data.counterparty,
       details: data.details,
+      categoryAccountId,
       supplierId: aliases.get(normaliseAlias(data.counterparty)) ?? null,
     },
   });
+  await postPayment(payment.id);
   await runAutoMatch(business.id);
   revalidateAll();
   redirect(`/app/payments/${payment.id}`);
+}
+
+async function validCategory(businessId: string, value: FormDataEntryValue | null) {
+  if (typeof value !== "string" || !value) return null;
+  const account = await prisma.account.findFirst({ where: { id: value, businessId, moneyKind: null } });
+  return account?.id ?? null;
+}
+
+export async function setPaymentCategory(formData: FormData) {
+  const { business } = await requireBusiness();
+  const paymentId = String(formData.get("paymentId"));
+  const categoryAccountId = await validCategory(business.id, formData.get("categoryAccountId"));
+  const updated = await prisma.payment.updateMany({
+    where: { id: paymentId, businessId: business.id },
+    data: { categoryAccountId },
+  });
+  if (updated.count) await postPayment(paymentId);
+  revalidateAll();
 }
 
 export async function markExempt(formData: FormData) {
@@ -139,19 +206,22 @@ export async function markExempt(formData: FormData) {
   });
   if (!parsed.success) throw new Error(firstError(parsed.error));
 
-  await prisma.payment.updateMany({
+  const updated = await prisma.payment.updateMany({
     where: { id: parsed.data.paymentId, businessId: business.id },
     data: { exemptReason: parsed.data.exemptReason, exemptNote: parsed.data.exemptNote ?? null },
   });
+  if (updated.count) await postPayment(parsed.data.paymentId);
   revalidateAll();
 }
 
 export async function clearExempt(formData: FormData) {
   const { business } = await requireBusiness();
-  await prisma.payment.updateMany({
-    where: { id: String(formData.get("paymentId")), businessId: business.id },
+  const paymentId = String(formData.get("paymentId"));
+  const updated = await prisma.payment.updateMany({
+    where: { id: paymentId, businessId: business.id },
     data: { exemptReason: null, exemptNote: null },
   });
+  if (updated.count) await postPayment(paymentId);
   revalidateAll();
 }
 
@@ -162,16 +232,20 @@ export async function bulkMarkExempt(formData: FormData) {
   const reason = exemptSchema.shape.exemptReason.safeParse(formData.get("exemptReason"));
   if (!reason.success || ids.length === 0) return;
 
+  const owned = await prisma.payment.findMany({ where: { id: { in: ids }, businessId: business.id }, select: { id: true } });
   await prisma.payment.updateMany({
-    where: { id: { in: ids }, businessId: business.id },
+    where: { id: { in: owned.map((p) => p.id) } },
     data: { exemptReason: reason.data },
   });
+  for (const p of owned) await postPayment(p.id);
   revalidateAll();
 }
 
 export async function deletePayment(formData: FormData) {
   const { business } = await requireBusiness();
-  await prisma.payment.deleteMany({ where: { id: String(formData.get("paymentId")), businessId: business.id } });
+  const paymentId = String(formData.get("paymentId"));
+  const deleted = await prisma.payment.deleteMany({ where: { id: paymentId, businessId: business.id } });
+  if (deleted.count) await postPayment(paymentId);
   revalidateAll();
   redirect("/app/payments");
 }

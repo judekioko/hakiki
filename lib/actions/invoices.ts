@@ -6,7 +6,10 @@ import { prisma } from "@/lib/prisma";
 import { requireBusiness } from "@/lib/business";
 import { findOrCreateSupplier } from "@/lib/suppliers";
 import { runAutoMatch } from "@/lib/auto-match";
-import { firstError, invoiceSchema } from "@/lib/validators";
+import { postBill, postPayment } from "@/lib/ledger";
+import { firstError, invoiceSchema, linesSchema, parseJsonField, taxIdFor } from "@/lib/validators";
+import { priceLines, totals } from "@/lib/document-lines";
+import { accountIdsByKey } from "@/lib/ledger";
 import type { ActionState } from "./types";
 
 const MAX_FILE_BYTES = 5 * 1024 * 1024;
@@ -20,23 +23,46 @@ export async function createInvoice(_prev: ActionState, formData: FormData): Pro
     supplierName: formData.get("supplierName") ?? "",
     supplierPin: formData.get("supplierPin") ?? "",
     invoiceDate: formData.get("invoiceDate"),
-    totalAmount: formData.get("totalAmount"),
+    dueDate: formData.get("dueDate") ?? "",
+    totalAmount: formData.get("totalAmount") || 0,
     vatAmount: formData.get("vatAmount") || 0,
     description: formData.get("description") ?? "",
   });
   if (!parsed.success) return { error: firstError(parsed.error) };
   const data = parsed.data;
+  const pin = taxIdFor(business.country).safeParse(data.supplierPin ?? "");
+  if (!pin.success) return { error: firstError(pin.error) };
+  const supplierPin = pin.data;
 
-  if (data.vatAmount > data.totalAmount) return { error: "VAT cannot be more than the invoice total" };
+  // Bills can be entered as a single total (quick capture) or line by line (needed for stock purchases).
+  const keys = await accountIdsByKey(business.id);
+  const categoryValue = String(formData.get("categoryAccountId") ?? "");
+  const category = categoryValue
+    ? await prisma.account.findFirst({ where: { id: categoryValue, businessId: business.id, moneyKind: null } })
+    : null;
+  let amounts = { totalAmount: data.totalAmount, vatAmount: data.vatAmount };
+  let lineRows: Awaited<ReturnType<typeof priceLines>>["lines"] = [];
+  const rawLines = formData.get("lines");
+  if (typeof rawLines === "string" && rawLines !== "" && rawLines !== "[]") {
+    const lineInput = parseJsonField(rawLines, linesSchema);
+    if (lineInput.error) return { error: lineInput.error };
+    const priced = await priceLines(business.id, lineInput.data!, "purchase", category?.id ?? keys.UNCATEGORISED_EXPENSE, true);
+    if (priced.error) return { error: priced.error };
+    lineRows = priced.lines!;
+    const sums = totals(lineRows);
+    amounts = { totalAmount: sums.total, vatAmount: sums.taxTotal };
+  }
+  if (amounts.totalAmount <= 0) return { error: "Enter the bill total or add lines" };
+  if (amounts.vatAmount > amounts.totalAmount) return { error: "VAT cannot be more than the invoice total" };
 
   let supplier = data.supplierId
     ? await prisma.supplier.findFirst({ where: { id: data.supplierId, businessId: business.id } })
     : null;
   if (!supplier) {
     if (!data.supplierName) return { error: "Choose a supplier or type the supplier's name" };
-    supplier = await findOrCreateSupplier(business.id, data.supplierName, data.supplierPin);
-  } else if (data.supplierPin && !supplier.kraPin) {
-    supplier = await prisma.supplier.update({ where: { id: supplier.id }, data: { kraPin: data.supplierPin } });
+    supplier = await findOrCreateSupplier(business.id, data.supplierName, supplierPin);
+  } else if (supplierPin && !supplier.kraPin) {
+    supplier = await prisma.supplier.update({ where: { id: supplier.id }, data: { kraPin: supplierPin } });
   }
 
   const invoiceNumber = data.invoiceNumber.toUpperCase();
@@ -63,15 +89,19 @@ export async function createInvoice(_prev: ActionState, formData: FormData): Pro
       supplierId: supplier.id,
       invoiceNumber,
       supplierName: supplier.name,
-      supplierPin: data.supplierPin ?? supplier.kraPin,
+      supplierPin: supplierPin ?? supplier.kraPin,
       invoiceDate: new Date(`${data.invoiceDate}T00:00:00Z`),
-      totalAmount: data.totalAmount,
-      vatAmount: data.vatAmount,
+      dueDate: data.dueDate ? new Date(`${data.dueDate}T00:00:00Z`) : null,
+      totalAmount: amounts.totalAmount,
+      vatAmount: amounts.vatAmount,
       description: data.description,
+      categoryAccountId: category?.id ?? null,
+      lines: { create: lineRows },
       ...fileFields,
     },
   });
 
+  await postBill(invoice.id);
   await runAutoMatch(business.id);
   revalidatePath("/app", "layout");
 
@@ -92,14 +122,22 @@ export async function setInvoiceStatus(formData: FormData) {
   });
   // A rejected invoice cannot back an expense, so release its payments.
   if (status === "REJECTED") {
-    await prisma.allocation.deleteMany({ where: { invoiceId, invoice: { businessId: business.id } } });
+    const released = await prisma.allocation.findMany({ where: { invoiceId, invoice: { businessId: business.id } } });
+    await prisma.allocation.deleteMany({ where: { id: { in: released.map((a) => a.id) } } });
+    for (const a of released) await postPayment(a.paymentId);
   }
   revalidatePath("/app", "layout");
 }
 
 export async function deleteInvoice(formData: FormData) {
   const { business } = await requireBusiness();
-  await prisma.invoice.deleteMany({ where: { id: String(formData.get("invoiceId")), businessId: business.id } });
+  const invoiceId = String(formData.get("invoiceId"));
+  const affected = await prisma.allocation.findMany({ where: { invoiceId, invoice: { businessId: business.id } } });
+  const deleted = await prisma.invoice.deleteMany({ where: { id: invoiceId, businessId: business.id } });
+  if (deleted.count) {
+    await postBill(invoiceId);
+    for (const a of affected) await postPayment(a.paymentId);
+  }
   revalidatePath("/app", "layout");
   redirect("/app/invoices");
 }

@@ -1,6 +1,7 @@
 import "server-only";
 import { prisma } from "./prisma";
 import { num, round2 } from "./money";
+import { postPayment } from "./ledger";
 import { isConfidentMatch, scoreMatch, type MatchInvoice, type MatchPayment } from "./matching";
 
 // Payments that still need invoice backing, with what is left unallocated.
@@ -58,6 +59,7 @@ export async function runAutoMatch(businessId: string): Promise<number> {
     if (!payment.supplierId && best.invoice.supplierId) {
       await prisma.payment.update({ where: { id: payment.id }, data: { supplierId: best.invoice.supplierId } });
     }
+    await postPayment(payment.id);
     best.invoice.remaining = round2(best.invoice.remaining - amount);
     linked++;
   }

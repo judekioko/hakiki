@@ -3,7 +3,8 @@ import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { requireBusiness } from "@/lib/business";
 import { num, round2 } from "@/lib/money";
-import { formatDate, formatKes } from "@/lib/format";
+import { formatDate } from "@/lib/format";
+import { businessContext } from "@/lib/form-options";
 import { INVOICE_STATUS_LABEL, INVOICE_STATUS_TONE } from "@/lib/invoice-status";
 import { deleteInvoice, setInvoiceStatus } from "@/lib/actions/invoices";
 import { unlinkAllocation } from "@/lib/actions/matching";
@@ -12,10 +13,11 @@ import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { SubmitButton } from "@/components/forms";
 
-export const metadata = { title: "Invoice" };
+export const metadata = { title: "Bill" };
 
 export default async function InvoiceDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { business } = await requireBusiness();
+  const { fmt, taxInvoiceLabel, taxIdLabel } = businessContext(business);
   const { id } = await params;
   const invoice = await prisma.invoice.findFirst({
     where: { id, businessId: business.id },
@@ -32,6 +34,8 @@ export default async function InvoiceDetailPage({ params }: { params: Promise<{ 
       status: true,
       fileName: true,
       fileType: true,
+      dueDate: true,
+      lines: { orderBy: { position: "asc" } },
       allocations: { include: { payment: true } },
     },
   });
@@ -45,7 +49,7 @@ export default async function InvoiceDetailPage({ params }: { params: Promise<{ 
     <div className="space-y-6">
       <PageHeader
         title={invoice.supplierName}
-        description={`eTIMS invoice ${invoice.invoiceNumber} · ${formatDate(invoice.invoiceDate)}`}
+        description={`${taxInvoiceLabel} ${invoice.invoiceNumber} · ${formatDate(invoice.invoiceDate)}`}
         action={<Badge tone={INVOICE_STATUS_TONE[invoice.status]}>{INVOICE_STATUS_LABEL[invoice.status]}</Badge>}
       />
 
@@ -55,19 +59,19 @@ export default async function InvoiceDetailPage({ params }: { params: Promise<{ 
             <CardBody className="grid gap-4 sm:grid-cols-3">
               <div>
                 <p className="text-xs text-slate-500">Total incl. VAT</p>
-                <p className="text-lg font-semibold">{formatKes(total)}</p>
+                <p className="text-lg font-semibold">{fmt(total)}</p>
               </div>
               <div>
                 <p className="text-xs text-slate-500">VAT</p>
-                <p className="text-lg font-semibold">{formatKes(num(invoice.vatAmount))}</p>
+                <p className="text-lg font-semibold">{fmt(num(invoice.vatAmount))}</p>
               </div>
               <div>
                 <p className="text-xs text-slate-500">Matched to payments</p>
-                <p className="text-lg font-semibold text-teal-700">{formatKes(matched)}</p>
+                <p className="text-lg font-semibold text-teal-700">{fmt(matched)}</p>
               </div>
               <div className="text-sm sm:col-span-3">
                 <p>
-                  <span className="text-slate-400">Supplier KRA PIN: </span>
+                  <span className="text-slate-400">Supplier {taxIdLabel}: </span>
                   {invoice.supplierPin ?? "not recorded"}
                   {invoice.supplierId ? (
                     <>
@@ -84,13 +88,51 @@ export default async function InvoiceDetailPage({ params }: { params: Promise<{ 
                     {invoice.description}
                   </p>
                 ) : null}
+                {invoice.dueDate ? (
+                  <p className="mt-1">
+                    <span className="text-slate-400">Due: </span>
+                    {formatDate(invoice.dueDate)}
+                  </p>
+                ) : null}
               </div>
             </CardBody>
           </Card>
 
+          {invoice.lines.length > 0 ? (
+            <Card>
+              <CardHeader>
+                <CardTitle>Lines</CardTitle>
+              </CardHeader>
+              <CardBody>
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-slate-200 text-left text-xs uppercase tracking-wide text-slate-500">
+                      <th className="py-2">Description</th>
+                      <th className="py-2 text-right">Qty</th>
+                      <th className="py-2 text-right">Unit price</th>
+                      <th className="py-2 text-right">Tax</th>
+                      <th className="py-2 text-right">Amount</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {invoice.lines.map((l) => (
+                      <tr key={l.id} className="border-b border-slate-100">
+                        <td className="py-1.5">{l.description}</td>
+                        <td className="py-1.5 text-right">{num(l.quantity)}</td>
+                        <td className="py-1.5 text-right">{fmt(num(l.unitPrice))}</td>
+                        <td className="py-1.5 text-right">{num(l.taxRate)}%</td>
+                        <td className="py-1.5 text-right">{fmt(num(l.lineTotal))}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </CardBody>
+            </Card>
+          ) : null}
+
           <Card>
             <CardHeader>
-              <CardTitle>Payments this invoice backs</CardTitle>
+              <CardTitle>Payments that settled this bill</CardTitle>
             </CardHeader>
             <CardBody>
               {invoice.allocations.length === 0 ? (
@@ -107,11 +149,11 @@ export default async function InvoiceDetailPage({ params }: { params: Promise<{ 
                         </Link>
                         <p className="text-xs text-slate-500">
                           {formatDate(a.payment.paidAt)}
-                          {a.payment.reference ? ` · ${a.payment.reference}` : ""} · paid {formatKes(num(a.payment.amount))}
+                          {a.payment.reference ? ` · ${a.payment.reference}` : ""} · paid {fmt(num(a.payment.amount))}
                         </p>
                       </div>
                       <div className="flex items-center gap-3">
-                        <span className="font-medium">{formatKes(num(a.amount))}</span>
+                        <span className="font-medium">{fmt(num(a.amount))}</span>
                         <form action={unlinkAllocation}>
                           <input type="hidden" name="allocationId" value={a.id} />
                           <SubmitButton variant="ghost" size="sm" pendingText="...">
@@ -192,7 +234,7 @@ export default async function InvoiceDetailPage({ params }: { params: Promise<{ 
           <form action={deleteInvoice}>
             <input type="hidden" name="invoiceId" value={invoice.id} />
             <SubmitButton variant="ghost" size="sm" pendingText="Deleting...">
-              Delete this invoice
+              Delete this bill
             </SubmitButton>
           </form>
         </div>

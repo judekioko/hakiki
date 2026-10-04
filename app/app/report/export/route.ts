@@ -10,7 +10,7 @@ function csvCell(value: string | number | null | undefined): string {
   return /[",\n\r]/.test(safe) ? `"${safe.replace(/"/g, '""')}"` : safe;
 }
 
-// Every payment in the financial year with its eTIMS backing status, for the accountant's working papers.
+// Every payment in the financial year with its tax invoice backing status, for the accountant's working papers.
 export async function GET(request: Request) {
   const { business } = await requireBusiness();
   const url = new URL(request.url);

@@ -3,6 +3,7 @@ import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
 import { prisma } from "./prisma";
 import { requireSession, type SessionPayload } from "./session";
+import { ensureBooks } from "./books";
 
 export const ACTIVE_BUSINESS_COOKIE = "hakiki_business";
 
@@ -27,6 +28,7 @@ export async function requireBusiness() {
   const session = await requireSession();
   const business = await getActiveBusiness(session);
   if (!business) redirect("/app/businesses");
+  await ensureBooks(business);
   return { session, business };
 }
 

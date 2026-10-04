@@ -5,7 +5,8 @@ import { requireBusiness } from "@/lib/business";
 import { buildInvoiceRequestMessage } from "@/lib/invoice-request";
 import { toWhatsAppNumber } from "@/lib/kra";
 import { num, round2 } from "@/lib/money";
-import { formatDate, formatKes } from "@/lib/format";
+import { formatDate } from "@/lib/format";
+import { businessContext } from "@/lib/form-options";
 import { requestInvoicesOnWhatsApp } from "@/lib/actions/suppliers";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
@@ -18,6 +19,7 @@ export const metadata = { title: "Supplier" };
 
 export default async function SupplierDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { business } = await requireBusiness();
+  const { fmt, taxIdLabel } = businessContext(business);
   const { id } = await params;
   const supplier = await prisma.supplier.findFirst({
     where: { id, businessId: business.id },
@@ -36,7 +38,7 @@ export default async function SupplierDetailPage({ params }: { params: Promise<{
     <div className="space-y-6">
       <PageHeader
         title={supplier.name}
-        description={supplier.kraPin ? `KRA PIN ${supplier.kraPin}` : "No KRA PIN saved"}
+        description={supplier.kraPin ? `${taxIdLabel} ${supplier.kraPin}` : `No ${taxIdLabel} saved`}
       />
 
       <div className="grid gap-6 lg:grid-cols-3">
@@ -67,7 +69,7 @@ export default async function SupplierDetailPage({ params }: { params: Promise<{
                           </Link>
                         </Td>
                         <Td className="text-xs text-slate-500">{r.reference ?? "—"}</Td>
-                        <Td className="whitespace-nowrap text-right">{formatKes(r.amount)}</Td>
+                        <Td className="whitespace-nowrap text-right">{fmt(r.amount)}</Td>
                         <Td>
                           <StatusBadge status={r.status} />
                         </Td>
@@ -81,7 +83,7 @@ export default async function SupplierDetailPage({ params }: { params: Promise<{
 
           <Card>
             <CardHeader>
-              <CardTitle>eTIMS invoices received</CardTitle>
+              <CardTitle>Bills received</CardTitle>
             </CardHeader>
             <CardBody>
               {supplier.invoices.length === 0 ? (
@@ -94,7 +96,7 @@ export default async function SupplierDetailPage({ params }: { params: Promise<{
                         {inv.invoiceNumber}
                       </Link>
                       <span className="text-slate-500">
-                        {formatDate(inv.invoiceDate)} · {formatKes(num(inv.totalAmount))}
+                        {formatDate(inv.invoiceDate)} · {fmt(num(inv.totalAmount))}
                       </span>
                     </li>
                   ))}
@@ -115,7 +117,7 @@ export default async function SupplierDetailPage({ params }: { params: Promise<{
               ) : (
                 <>
                   <p>
-                    <strong className="text-rose-700">{formatKes(unbacked)}</strong> across {request.missing.length}{" "}
+                    <strong className="text-rose-700">{fmt(unbacked)}</strong> across {request.missing.length}{" "}
                     payment{request.missing.length === 1 ? "" : "s"} has no invoice.
                   </p>
                   <pre className="max-h-64 overflow-auto whitespace-pre-wrap rounded-md bg-slate-50 p-3 font-sans text-xs text-slate-700">

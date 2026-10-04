@@ -5,7 +5,8 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { createSession, destroySession } from "@/lib/session";
 import { setActiveBusiness } from "@/lib/business";
-import { firstError, loginSchema, signupSchema } from "@/lib/validators";
+import { firstError, loginSchema, signupSchema, taxIdFor } from "@/lib/validators";
+import { COUNTRIES, countryPack } from "@/lib/countries";
 import type { ActionState } from "./types";
 
 function safeRedirectTarget(value: FormDataEntryValue | null): string {
@@ -35,10 +36,15 @@ export async function signupAction(_prev: ActionState, formData: FormData): Prom
     email: formData.get("email"),
     password: formData.get("password"),
     businessName: formData.get("businessName"),
-    kraPin: formData.get("kraPin") ?? "",
+    country: formData.get("country") ?? "KE",
+    taxId: String(formData.get("taxId") ?? ""),
   });
   if (!parsed.success) return { error: firstError(parsed.error) };
   const data = parsed.data;
+  if (!COUNTRIES.some((c) => c.code === data.country)) return { error: "Choose a country" };
+  const taxId = taxIdFor(data.country).safeParse(data.taxId ?? "");
+  if (!taxId.success) return { error: firstError(taxId.error) };
+  const pack = countryPack(data.country);
 
   const existing = await prisma.user.findUnique({ where: { email: data.email } });
   if (existing) return { error: "An account with this email already exists. Sign in instead." };
@@ -49,7 +55,18 @@ export async function signupAction(_prev: ActionState, formData: FormData): Prom
       name: data.name,
       passwordHash: await bcrypt.hash(data.password, 10),
       memberships: {
-        create: { role: "OWNER", business: { create: { name: data.businessName, kraPin: data.kraPin } } },
+        create: {
+          role: "OWNER",
+          business: {
+            create: {
+              name: data.businessName,
+              kraPin: taxId.data ?? null,
+              country: pack.code,
+              currency: pack.currency,
+              incomeTaxRate: pack.corporateTaxRate,
+            },
+          },
+        },
       },
     },
     include: { memberships: true },

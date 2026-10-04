@@ -12,7 +12,7 @@ export function Logo({ compact = false, href = "/app" }: { compact?: boolean; hr
       {compact ? null : (
         <span className="leading-tight">
           <span className="block text-base font-bold text-slate-900">{APP_NAME}</span>
-          <span className="block text-[11px] text-slate-500">eTIMS expense check</span>
+          <span className="block text-[11px] text-slate-500">Accounting for Africa</span>
         </span>
       )}
     </Link>

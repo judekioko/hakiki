@@ -4,11 +4,13 @@ import { formatDate } from "@/lib/format";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
 import { ImportForm } from "@/components/forms";
+import { moneyAccountOptions } from "@/lib/form-options";
 
 export const metadata = { title: "Import statement" };
 
 export default async function ImportPage() {
   const { business } = await requireBusiness();
+  const moneyAccounts = await moneyAccountOptions(business.id);
   const batches = await prisma.importBatch.findMany({
     where: { businessId: business.id },
     orderBy: { createdAt: "desc" },
@@ -17,11 +19,11 @@ export default async function ImportPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Import a statement" description="Bring in the money your business paid out, then match it to invoices." />
+      <PageHeader title="Import a statement" description="Bring in a bank or mobile money statement. Money out becomes payments; money in becomes receipts." />
       <div className="grid gap-6 lg:grid-cols-5">
         <Card className="lg:col-span-3">
           <CardBody>
-            <ImportForm />
+            <ImportForm moneyAccounts={moneyAccounts} />
           </CardBody>
         </Card>
         <Card className="lg:col-span-2">
@@ -41,7 +43,7 @@ export default async function ImportPage() {
               Hakiki finds the date, reference, description and paid-out columns by their names, so most layouts work.
               If a file is not recognised, check that it has a date column and a withdrawn/debit column.
             </p>
-            <p>Personal M-Pesa statements come as PDFs and are not supported yet. Add those payments by hand.</p>
+            <p>Statements that only come as PDFs are not supported yet. Add those transactions by hand.</p>
             <p>
               <a href="/samples/mpesa-sample.csv" download className="font-medium text-teal-700 underline">
                 Download a sample M-Pesa CSV

@@ -2,29 +2,33 @@ import Link from "next/link";
 import { Logo } from "@/components/logo";
 import { getSession } from "@/lib/session";
 import { APP_NAME } from "@/lib/brand";
-
-const steps = [
-  {
-    title: "Import your payments",
-    body: "Upload your M-Pesa business or bank statement as CSV, or record cash payments. Money coming in is ignored.",
-  },
-  {
-    title: "Add supplier eTIMS invoices",
-    body: "Snap a photo or attach the PDF. Hakiki matches each invoice to the payment it belongs to: same amount, nearby date, same supplier.",
-  },
-  {
-    title: "Chase the gaps",
-    body: "See every payment with no invoice and the tax it could cost you. Send each supplier one WhatsApp listing what they owe you.",
-  },
-];
+import { COUNTRIES } from "@/lib/countries";
 
 const features = [
-  ["Tax at risk, in shillings", "Unbacked expenses × your tax rate, so you know what a missing invoice actually costs."],
-  ["Learns your suppliers", "Match a statement name once and future imports link to that supplier automatically."],
-  ["Instalments and lump sums", "One invoice paid in parts, or one payment covering several invoices, both reconcile."],
-  ["Not every payment needs one", "Mark salaries, statutory payments, bank charges and transfers as not needing an invoice, with a reason."],
-  ["Built for accountants too", "Switch between client businesses and print a year-end report for each."],
-  ["Proof kept with the record", "The invoice photo or PDF stays attached to the payment it backs."],
+  {
+    title: "Invoices that get paid by mobile money",
+    body: "Send tax invoices with your paybill or till on them. When the money lands in M-Pesa, MTN MoMo or the bank, Hakiki matches it to the invoice.",
+  },
+  {
+    title: "Import statements, skip the typing",
+    body: "Upload a mobile money or bank statement. Money out becomes expenses, money in becomes customer payments, and repeat names are recognised next time.",
+  },
+  {
+    title: "VAT and tax invoices, done right",
+    body: "Your country's VAT rates are built in, plus a check that every expense is backed by a valid supplier tax invoice: eTIMS, EFRIS, EBM and others.",
+  },
+  {
+    title: "Stock that keeps itself",
+    body: "Purchases add stock at cost and sales remove it, so you always know what is on the shelf, what it is worth and what to reorder.",
+  },
+  {
+    title: "Payroll in minutes",
+    body: "Kenyan PAYE, SHIF, NSSF and Housing Levy are calculated for you. Elsewhere, set your country's bands once. Payslips print in one click.",
+  },
+  {
+    title: "Real books for your accountant",
+    body: "Double-entry ledger, profit & loss, balance sheet, trial balance, VAT summary and aged debtors. Accountants can manage every client from one login.",
+  },
 ];
 
 export default async function LandingPage() {
@@ -53,86 +57,62 @@ export default async function LandingPage() {
       </header>
 
       <section className="mx-auto max-w-6xl px-4 pb-16 pt-10 sm:px-6 sm:pt-16">
-        <p className="inline-flex rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-800">
-          From the 2026 year of income, KRA disallows expenses without an eTIMS invoice
+        <p className="inline-flex rounded-full bg-teal-50 px-3 py-1 text-xs font-semibold text-teal-800">
+          Built for {COUNTRIES.length} African countries
         </p>
         <h1 className="mt-5 max-w-3xl text-4xl font-bold tracking-tight text-slate-900 sm:text-5xl">
-          Find the expenses KRA will reject before you file.
+          Accounting that speaks mobile money, VAT and payroll the African way.
         </h1>
         <p className="mt-5 max-w-2xl text-lg text-slate-600">
-          {APP_NAME} matches every M-Pesa and bank payment your business makes to a supplier eTIMS invoice. It shows
-          what is missing, what it could cost in tax, and who to chase.
+          {APP_NAME} runs your invoices, expenses, stock, payroll and tax in one place, in your own currency. It reads
+          your mobile money statements so the books mostly keep themselves.
         </p>
         <div className="mt-8 flex flex-wrap gap-3">
           <Link href="/signup" className="rounded-md bg-teal-700 px-5 py-3 text-sm font-semibold text-white hover:bg-teal-800">
-            Check my expenses free
+            Start free
           </Link>
-          <Link href="#how" className="rounded-md border border-slate-300 px-5 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50">
-            How it works
+          <Link href="#features" className="rounded-md border border-slate-300 px-5 py-3 text-sm font-semibold text-slate-700 hover:bg-slate-50">
+            See what it does
           </Link>
         </div>
-
-        <div className="mt-12 grid gap-4 rounded-xl border border-slate-200 bg-slate-50 p-5 sm:grid-cols-3">
-          <div>
-            <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Paid to suppliers</p>
-            <p className="mt-1 text-2xl font-semibold">KES 4,820,000</p>
-          </div>
-          <div>
-            <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Without an eTIMS invoice</p>
-            <p className="mt-1 text-2xl font-semibold text-rose-700">KES 1,135,500</p>
-          </div>
-          <div>
-            <p className="text-xs font-medium uppercase tracking-wide text-slate-500">Tax at risk (30%)</p>
-            <p className="mt-1 text-2xl font-semibold text-rose-700">KES 340,650</p>
-          </div>
-          <p className="text-xs text-slate-500 sm:col-span-3">Example figures for illustration.</p>
-        </div>
-      </section>
-
-      <section id="how" className="border-t border-slate-200 bg-slate-50">
-        <div className="mx-auto max-w-6xl px-4 py-16 sm:px-6">
-          <h2 className="text-2xl font-bold text-slate-900">How it works</h2>
-          <ol className="mt-8 grid gap-6 md:grid-cols-3">
-            {steps.map((step, i) => (
-              <li key={step.title} className="rounded-xl border border-slate-200 bg-white p-6">
-                <span className="flex h-8 w-8 items-center justify-center rounded-full bg-teal-700 text-sm font-bold text-white">
-                  {i + 1}
-                </span>
-                <h3 className="mt-4 font-semibold text-slate-900">{step.title}</h3>
-                <p className="mt-2 text-sm text-slate-600">{step.body}</p>
-              </li>
-            ))}
-          </ol>
-        </div>
-      </section>
-
-      <section className="mx-auto max-w-6xl px-4 py-16 sm:px-6">
-        <h2 className="text-2xl font-bold text-slate-900">Built for how Kenyan businesses actually pay</h2>
-        <div className="mt-8 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
-          {features.map(([title, body]) => (
-            <div key={title}>
-              <h3 className="font-semibold text-slate-900">{title}</h3>
-              <p className="mt-1 text-sm text-slate-600">{body}</p>
-            </div>
+        <div className="mt-10 flex flex-wrap gap-2">
+          {COUNTRIES.map((c) => (
+            <span key={c.code} className="rounded-full border border-slate-200 px-3 py-1 text-xs text-slate-600">
+              {c.name} · {c.currency}
+            </span>
           ))}
+        </div>
+      </section>
+
+      <section id="features" className="border-t border-slate-200 bg-slate-50">
+        <div className="mx-auto max-w-6xl px-4 py-16 sm:px-6">
+          <h2 className="text-2xl font-bold text-slate-900">Everything a growing business needs</h2>
+          <div className="mt-8 grid gap-6 sm:grid-cols-2 lg:grid-cols-3">
+            {features.map((f) => (
+              <div key={f.title} className="rounded-xl border border-slate-200 bg-white p-6">
+                <h3 className="font-semibold text-slate-900">{f.title}</h3>
+                <p className="mt-2 text-sm text-slate-600">{f.body}</p>
+              </div>
+            ))}
+          </div>
         </div>
       </section>
 
       <section className="border-t border-slate-200 bg-teal-800 text-white">
         <div className="mx-auto flex max-w-6xl flex-col items-start gap-4 px-4 py-12 sm:flex-row sm:items-center sm:justify-between sm:px-6">
           <div>
-            <h2 className="text-xl font-bold">2026 returns are due by 30 June 2027.</h2>
-            <p className="mt-1 text-teal-100">Every month you wait is another month of invoices to chase.</p>
+            <h2 className="text-xl font-bold">Your books, ready for the tax return.</h2>
+            <p className="mt-1 text-teal-100">Set up in five minutes. Bring last year&apos;s statements and catch up in an afternoon.</p>
           </div>
           <Link href="/signup" className="rounded-md bg-white px-5 py-3 text-sm font-semibold text-teal-800 hover:bg-teal-50">
-            Start free
+            Create your account
           </Link>
         </div>
       </section>
 
       <footer className="mx-auto max-w-6xl px-4 py-8 text-xs text-slate-500 sm:px-6">
-        {APP_NAME} is not affiliated with the Kenya Revenue Authority. It does not file returns or issue eTIMS invoices.
-        Confirm tax treatment with your tax adviser.
+        {APP_NAME} is not affiliated with any tax authority and does not yet file returns or connect to national
+        e-invoicing systems. Tax rates are defaults; confirm them with your tax adviser.
       </footer>
     </div>
   );

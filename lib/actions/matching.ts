@@ -6,6 +6,7 @@ import { requireBusiness } from "@/lib/business";
 import { num, round2 } from "@/lib/money";
 import { learnAlias } from "@/lib/suppliers";
 import { runAutoMatch } from "@/lib/auto-match";
+import { postPayment } from "@/lib/ledger";
 
 export type MatchActionState = { error?: string; success?: string };
 
@@ -36,14 +37,18 @@ export async function linkPaymentToInvoice(formData: FormData) {
     }
     await learnAlias(business.id, invoice.supplierId, payment.counterparty);
   }
+  await postPayment(paymentId);
   revalidatePath("/app", "layout");
 }
 
 export async function unlinkAllocation(formData: FormData) {
   const { business } = await requireBusiness();
-  await prisma.allocation.deleteMany({
+  const allocation = await prisma.allocation.findFirst({
     where: { id: String(formData.get("allocationId")), payment: { businessId: business.id } },
   });
+  if (!allocation) return;
+  await prisma.allocation.delete({ where: { id: allocation.id } });
+  await postPayment(allocation.paymentId);
   revalidatePath("/app", "layout");
 }
 

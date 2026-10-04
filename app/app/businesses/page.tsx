@@ -1,6 +1,8 @@
 import { requireSession } from "@/lib/session";
 import { getActiveBusiness, listMyBusinesses } from "@/lib/business";
 import { switchBusiness } from "@/lib/actions/businesses";
+import { countryOptions } from "@/lib/form-options";
+import { countryPack } from "@/lib/countries";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -33,7 +35,7 @@ export default async function BusinessesPage() {
                     <div>
                       <p className="font-medium text-slate-900">{b.name}</p>
                       <p className="text-xs text-slate-500">
-                        {b.kraPin ?? "No KRA PIN"} · {b.role === "ACCOUNTANT" ? "Client" : "Owner"}
+                        {countryPack(b.country).name} · {b.currency} · {b.role === "ACCOUNTANT" ? "Client" : "Owner"}
                       </p>
                     </div>
                     {b.id === active?.id ? (
@@ -57,7 +59,7 @@ export default async function BusinessesPage() {
             <CardTitle>Add a business</CardTitle>
           </CardHeader>
           <CardBody>
-            <BusinessForm mode="create" />
+            <BusinessForm mode="create" countries={countryOptions()} />
           </CardBody>
         </Card>
       </div>

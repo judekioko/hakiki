@@ -2,7 +2,7 @@ import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { requireBusiness } from "@/lib/business";
 import { loadPayments } from "@/lib/coverage";
-import { formatKes } from "@/lib/format";
+import { businessContext } from "@/lib/form-options";
 import { round2 } from "@/lib/money";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
@@ -14,6 +14,7 @@ export const metadata = { title: "Suppliers" };
 
 export default async function SuppliersPage() {
   const { business } = await requireBusiness();
+  const { fmt, taxInvoiceLabel, taxIdLabel } = businessContext(business);
   const [suppliers, rows] = await Promise.all([
     prisma.supplier.findMany({
       where: { businessId: business.id },
@@ -37,7 +38,7 @@ export default async function SuppliersPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader title="Suppliers" description="Who you pay, and who still owes you eTIMS invoices (all years)." />
+      <PageHeader title="Suppliers" description={`Who you pay, and who still owes you ${taxInvoiceLabel}s (all years).`} />
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="lg:col-span-2">
           {sorted.length === 0 ? (
@@ -49,7 +50,7 @@ export default async function SuppliersPage() {
               <Thead>
                 <Tr>
                   <Th>Supplier</Th>
-                  <Th>KRA PIN</Th>
+                  <Th>{taxIdLabel}</Th>
                   <Th className="text-right">Paid</Th>
                   <Th className="text-right">Missing invoices</Th>
                 </Tr>
@@ -66,9 +67,9 @@ export default async function SuppliersPage() {
                         <p className="text-xs text-slate-500">{s._count.invoices} invoices</p>
                       </Td>
                       <Td className="font-mono text-xs">{s.kraPin ?? "—"}</Td>
-                      <Td className="whitespace-nowrap text-right">{formatKes(round2(t?.paid ?? 0))}</Td>
+                      <Td className="whitespace-nowrap text-right">{fmt(round2(t?.paid ?? 0))}</Td>
                       <Td className="whitespace-nowrap text-right">
-                        {t && t.unbacked > 0 ? <span className="text-rose-700">{formatKes(round2(t.unbacked))}</span> : "—"}
+                        {t && t.unbacked > 0 ? <span className="text-rose-700">{fmt(round2(t.unbacked))}</span> : "—"}
                       </Td>
                     </Tr>
                   );

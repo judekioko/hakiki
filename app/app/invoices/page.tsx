@@ -3,17 +3,19 @@ import { prisma } from "@/lib/prisma";
 import { requireBusiness } from "@/lib/business";
 import { financialYear, parseYear, yearOptions } from "@/lib/periods";
 import { num, round2 } from "@/lib/money";
-import { formatDate, formatKes } from "@/lib/format";
+import { formatDate } from "@/lib/format";
+import { businessContext } from "@/lib/form-options";
 import { PageHeader } from "@/components/page-header";
 import { Table, Tbody, Td, Th, Thead, Tr } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { INVOICE_STATUS_LABEL, INVOICE_STATUS_TONE } from "@/lib/invoice-status";
 import { EmptyState, LinkButton, YearPicker } from "@/components/bits";
 
-export const metadata = { title: "eTIMS invoices" };
+export const metadata = { title: "Bills" };
 
 export default async function InvoicesPage({ searchParams }: { searchParams: Promise<{ year?: string }> }) {
   const { business } = await requireBusiness();
+  const { fmt, taxInvoiceLabel } = businessContext(business);
   const { year: yearParam } = await searchParams;
   const year = parseYear(yearParam, business.yearEndMonth);
   const period = financialYear(year, business.yearEndMonth);
@@ -27,9 +29,9 @@ export default async function InvoicesPage({ searchParams }: { searchParams: Pro
   return (
     <div className="space-y-5">
       <PageHeader
-        title="eTIMS invoices"
-        description="Invoices your suppliers issued to you. Each one can back one or more payments."
-        action={<LinkButton href="/app/invoices/new">Add invoice</LinkButton>}
+        title="Bills"
+        description={`Supplier bills (${taxInvoiceLabel}s). Each is matched to the payments that settled it.`}
+        action={<LinkButton href="/app/invoices/new">Add bill</LinkButton>}
       />
       <YearPicker years={yearOptions(business.yearEndMonth)} current={year} basePath="/app/invoices" />
 
@@ -62,9 +64,9 @@ export default async function InvoicesPage({ searchParams }: { searchParams: Pro
                     </Link>
                   </Td>
                   <Td className="font-mono text-xs">{inv.invoiceNumber}</Td>
-                  <Td className="whitespace-nowrap text-right">{formatKes(total)}</Td>
+                  <Td className="whitespace-nowrap text-right">{fmt(total)}</Td>
                   <Td className="whitespace-nowrap text-right">
-                    {matched === 0 ? <span className="text-amber-700">Not matched</span> : formatKes(matched)}
+                    {matched === 0 ? <span className="text-amber-700">Not matched</span> : fmt(matched)}
                   </Td>
                   <Td>
                     <Badge tone={INVOICE_STATUS_TONE[inv.status]}>{INVOICE_STATUS_LABEL[inv.status]}</Badge>

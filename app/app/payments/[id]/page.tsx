@@ -6,9 +6,12 @@ import { num, round2 } from "@/lib/money";
 import { paymentStatus } from "@/lib/coverage";
 import { suggestInvoices } from "@/lib/matching";
 import { openInvoices } from "@/lib/auto-match";
-import { formatDate, formatKes, toDateInput } from "@/lib/format";
+import { formatDate, toDateInput } from "@/lib/format";
+import { businessContext, categoryAccountOptions } from "@/lib/form-options";
+import { accountIdsByKey, defaultPaymentCategoryKey } from "@/lib/ledger";
+import { AccountSelect } from "@/components/form-kit";
 import { EXEMPT_LABEL, EXEMPT_REASONS, EXEMPTION_DISCLAIMER } from "@/lib/exemptions";
-import { clearExempt, deletePayment, markExempt } from "@/lib/actions/payments";
+import { clearExempt, deletePayment, markExempt, setPaymentCategory } from "@/lib/actions/payments";
 import { linkPaymentToInvoice, unlinkAllocation } from "@/lib/actions/matching";
 import { linkPaymentToSupplier } from "@/lib/actions/suppliers";
 import { PageHeader } from "@/components/page-header";
@@ -21,8 +24,6 @@ import { InvoiceForm, SubmitButton, SupplierForm } from "@/components/forms";
 
 export const metadata = { title: "Payment" };
 
-const SOURCE_LABEL = { MPESA: "M-Pesa", BANK: "Bank", CASH: "Cash", OTHER: "Other" } as const;
-
 export default async function PaymentDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { business } = await requireBusiness();
   const { id } = await params;
@@ -31,16 +32,24 @@ export default async function PaymentDetailPage({ params }: { params: Promise<{ 
     include: { supplier: true, allocations: { include: { invoice: true } } },
   });
   if (!payment) notFound();
+  const ctx = businessContext(business);
+  const fmt = ctx.fmt;
 
   const amount = num(payment.amount);
   const allocated = round2(payment.allocations.reduce((s, a) => s + num(a.amount), 0));
   const remaining = round2(amount - allocated);
   const status = paymentStatus(amount, allocated, payment.exemptReason);
 
-  const [suppliers, candidates] = await Promise.all([
+  const [suppliers, candidates, categories, keys, moneyAccount, payRuns] = await Promise.all([
     prisma.supplier.findMany({ where: { businessId: business.id }, orderBy: { name: "asc" }, select: { id: true, name: true } }),
     status === "EXEMPT" || remaining <= 0 ? Promise.resolve([]) : openInvoices(business.id),
+    categoryAccountOptions(business.id),
+    accountIdsByKey(business.id),
+    payment.moneyAccountId ? prisma.account.findUnique({ where: { id: payment.moneyAccountId } }) : null,
+    prisma.payRun.count({ where: { businessId: business.id } }),
   ]);
+  const effectiveCategory = payment.categoryAccountId ?? keys[defaultPaymentCategoryKey(payment.exemptReason, payRuns > 0)];
+  const categoryName = categories.find((c) => c.id === effectiveCategory);
   const suggestions = suggestInvoices(
     { id: payment.id, paidAt: payment.paidAt, remaining, counterparty: payment.counterparty, supplierId: payment.supplierId },
     candidates.filter((c) => !payment.allocations.some((a) => a.invoiceId === c.id))
@@ -50,7 +59,7 @@ export default async function PaymentDetailPage({ params }: { params: Promise<{ 
     <div className="space-y-6">
       <PageHeader
         title={payment.supplier?.name ?? payment.counterparty}
-        description={`${SOURCE_LABEL[payment.source]} payment on ${formatDate(payment.paidAt)}${payment.reference ? ` · ${payment.reference}` : ""}`}
+        description={`Paid from ${moneyAccount?.name ?? payment.source} on ${formatDate(payment.paidAt)}${payment.reference ? ` · ${payment.reference}` : ""}`}
         action={<StatusBadge status={status} />}
       />
 
@@ -60,15 +69,15 @@ export default async function PaymentDetailPage({ params }: { params: Promise<{ 
             <CardBody className="grid gap-4 sm:grid-cols-3">
               <div>
                 <p className="text-xs text-slate-500">Amount paid</p>
-                <p className="text-lg font-semibold">{formatKes(amount)}</p>
+                <p className="text-lg font-semibold">{fmt(amount)}</p>
               </div>
               <div>
-                <p className="text-xs text-slate-500">Backed by invoices</p>
-                <p className="text-lg font-semibold text-teal-700">{formatKes(allocated)}</p>
+                <p className="text-xs text-slate-500">Matched to bills</p>
+                <p className="text-lg font-semibold text-teal-700">{fmt(allocated)}</p>
               </div>
               <div>
-                <p className="text-xs text-slate-500">Still needs an invoice</p>
-                <p className="text-lg font-semibold text-rose-700">{status === "EXEMPT" ? "—" : formatKes(Math.max(0, remaining))}</p>
+                <p className="text-xs text-slate-500">Still needs a {ctx.taxInvoiceLabel}</p>
+                <p className="text-lg font-semibold text-rose-700">{status === "EXEMPT" ? "—" : fmt(Math.max(0, remaining))}</p>
               </div>
               {payment.details ? (
                 <p className="text-sm text-slate-600 sm:col-span-3">
@@ -82,7 +91,7 @@ export default async function PaymentDetailPage({ params }: { params: Promise<{ 
           {payment.allocations.length > 0 ? (
             <Card>
               <CardHeader>
-                <CardTitle>Linked eTIMS invoices</CardTitle>
+                <CardTitle>Linked bills</CardTitle>
               </CardHeader>
               <CardBody>
                 <ul className="divide-y divide-slate-100">
@@ -93,11 +102,11 @@ export default async function PaymentDetailPage({ params }: { params: Promise<{ 
                           {a.invoice.invoiceNumber}
                         </Link>
                         <p className="text-xs text-slate-500">
-                          {a.invoice.supplierName} · {formatDate(a.invoice.invoiceDate)} · invoice total {formatKes(num(a.invoice.totalAmount))}
+                          {a.invoice.supplierName} · {formatDate(a.invoice.invoiceDate)} · invoice total {fmt(num(a.invoice.totalAmount))}
                         </p>
                       </div>
                       <div className="flex items-center gap-3">
-                        <span className="font-medium">{formatKes(num(a.amount))}</span>
+                        <span className="font-medium">{fmt(num(a.amount))}</span>
                         <form action={unlinkAllocation}>
                           <input type="hidden" name="allocationId" value={a.id} />
                           <SubmitButton variant="ghost" size="sm" pendingText="...">
@@ -116,7 +125,7 @@ export default async function PaymentDetailPage({ params }: { params: Promise<{ 
             <>
               <Card>
                 <CardHeader>
-                  <CardTitle>Suggested invoices</CardTitle>
+                  <CardTitle>Suggested bills</CardTitle>
                 </CardHeader>
                 <CardBody>
                   {suggestions.length === 0 ? (
@@ -132,7 +141,7 @@ export default async function PaymentDetailPage({ params }: { params: Promise<{ 
                               {invoice.supplierName}
                             </Link>
                             <p className="text-xs text-slate-500">
-                              {formatDate(invoice.invoiceDate)} · {formatKes(invoice.remaining)} open
+                              {formatDate(invoice.invoiceDate)} · {fmt(invoice.remaining)} open
                             </p>
                             <div className="mt-1 flex flex-wrap gap-1">
                               {match.reasons.map((r) => (
@@ -156,13 +165,16 @@ export default async function PaymentDetailPage({ params }: { params: Promise<{ 
 
               <Card>
                 <CardHeader>
-                  <CardTitle>Add the eTIMS invoice for this payment</CardTitle>
+                  <CardTitle>Add the supplier bill for this payment</CardTitle>
                 </CardHeader>
                 <CardBody>
                   <InvoiceForm
                     suppliers={suppliers}
                     paymentId={payment.id}
                     today={toDateInput(new Date())}
+                    taxIdLabel={ctx.taxIdLabel}
+                    taxInvoiceLabel={ctx.taxInvoiceLabel}
+                    categories={categories}
                     defaults={{
                       supplierId: payment.supplierId ?? undefined,
                       supplierName: payment.supplierId ? "" : payment.counterparty,
@@ -177,6 +189,26 @@ export default async function PaymentDetailPage({ params }: { params: Promise<{ 
         </div>
 
         <div className="space-y-6">
+          {remaining > 0 ? (
+            <Card>
+              <CardHeader>
+                <CardTitle>Booked to</CardTitle>
+              </CardHeader>
+              <CardBody className="space-y-3">
+                <p className="text-sm text-slate-600">
+                  {allocated > 0 ? "The part not matched to a bill" : "This payment"} is booked to{" "}
+                  <strong>{categoryName ? `${categoryName.code} · ${categoryName.name}` : "Uncategorised expense"}</strong>.
+                </p>
+                <form action={setPaymentCategory} className="space-y-2">
+                  <input type="hidden" name="paymentId" value={payment.id} />
+                  <AccountSelect name="categoryAccountId" accounts={categories} defaultValue={payment.categoryAccountId ?? ""} placeholder="Automatic" />
+                  <SubmitButton variant="secondary" size="sm">
+                    Change category
+                  </SubmitButton>
+                </form>
+              </CardBody>
+            </Card>
+          ) : null}
           <Card>
             <CardHeader>
               <CardTitle>Supplier</CardTitle>
@@ -187,7 +219,7 @@ export default async function PaymentDetailPage({ params }: { params: Promise<{ 
                   <Link href={`/app/suppliers/${payment.supplier.id}`} className="font-medium text-slate-900 hover:underline">
                     {payment.supplier.name}
                   </Link>
-                  <p className="text-xs text-slate-500">{payment.supplier.kraPin ?? "No KRA PIN saved"}</p>
+                  <p className="text-xs text-slate-500">{payment.supplier.kraPin ?? `No ${ctx.taxIdLabel} saved`}</p>
                 </div>
               ) : (
                 <>
@@ -213,7 +245,7 @@ export default async function PaymentDetailPage({ params }: { params: Promise<{ 
                   <details className="text-sm">
                     <summary className="cursor-pointer font-medium text-teal-700">Create a new supplier</summary>
                     <div className="mt-3">
-                      <SupplierForm mode="create" paymentId={payment.id} defaults={{ name: payment.counterparty, kraPin: null, phone: null }} />
+                      <SupplierForm mode="create" taxIdLabel={ctx.taxIdLabel} paymentId={payment.id} defaults={{ name: payment.counterparty, kraPin: null, phone: null }} />
                     </div>
                   </details>
                 </>

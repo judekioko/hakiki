@@ -1,7 +1,8 @@
 import { requireBusiness } from "@/lib/business";
 import { loadPayments, summarise } from "@/lib/coverage";
 import { financialYear, parseYear, yearOptions } from "@/lib/periods";
-import { formatDate, formatKes, formatPercent } from "@/lib/format";
+import { formatDate, formatPercent } from "@/lib/format";
+import { businessContext } from "@/lib/form-options";
 import { num, round2 } from "@/lib/money";
 import { EXEMPT_LABEL } from "@/lib/exemptions";
 import { APP_NAME } from "@/lib/brand";
@@ -13,6 +14,7 @@ export const metadata = { title: "Year-end report" };
 
 export default async function ReportPage({ searchParams }: { searchParams: Promise<{ year?: string }> }) {
   const { business } = await requireBusiness();
+  const { fmt, taxInvoiceLabel, taxIdLabel } = businessContext(business);
   const { year: yearParam } = await searchParams;
   const year = parseYear(yearParam, business.yearEndMonth);
   const period = financialYear(year, business.yearEndMonth);
@@ -42,10 +44,10 @@ export default async function ReportPage({ searchParams }: { searchParams: Promi
         <div className="flex flex-wrap items-start justify-between gap-4 border-b border-slate-200 pb-4">
           <div>
             <h1 className="text-xl font-bold">{business.name}</h1>
-            <p className="text-sm text-slate-500">{business.kraPin ? `KRA PIN ${business.kraPin}` : "KRA PIN not recorded"}</p>
+            <p className="text-sm text-slate-500">{business.kraPin ? `${taxIdLabel} ${business.kraPin}` : `${taxIdLabel} not recorded`}</p>
           </div>
           <div className="text-right text-sm">
-            <p className="font-semibold">eTIMS expense backing report · {period.label}</p>
+            <p className="font-semibold">{taxInvoiceLabel} backing report · {period.label}</p>
             <p className="text-slate-500">
               {formatDate(period.start)} – {formatDate(new Date(period.end.getTime() - 24 * 60 * 60 * 1000))}
             </p>
@@ -55,12 +57,12 @@ export default async function ReportPage({ searchParams }: { searchParams: Promi
 
         <dl className="grid gap-4 py-5 sm:grid-cols-3">
           {[
-            ["Total paid out", formatKes(summary.totalPaid)],
-            ["Not needing an eTIMS invoice", formatKes(summary.exempt)],
-            ["Needing an eTIMS invoice", formatKes(summary.needsInvoice)],
-            ["Backed by eTIMS invoices", `${formatKes(summary.backed)} (${formatPercent(summary.coveragePercent)})`],
-            ["Not backed", formatKes(summary.unbacked)],
-            [`Estimated tax at ${taxRate}%`, formatKes(summary.taxAtRisk)],
+            ["Total paid out", fmt(summary.totalPaid)],
+            [`Not needing a ${taxInvoiceLabel}`, fmt(summary.exempt)],
+            [`Needing a ${taxInvoiceLabel}`, fmt(summary.needsInvoice)],
+            [`Backed by ${taxInvoiceLabel}s`, `${fmt(summary.backed)} (${formatPercent(summary.coveragePercent)})`],
+            ["Not backed", fmt(summary.unbacked)],
+            [`Estimated tax at ${taxRate}%`, fmt(summary.taxAtRisk)],
           ].map(([label, value]) => (
             <div key={label}>
               <dt className="text-xs text-slate-500">{label}</dt>
@@ -76,7 +78,7 @@ export default async function ReportPage({ searchParams }: { searchParams: Promi
               {[...exemptByReason.entries()].map(([reason, amount]) => (
                 <li key={reason} className="flex justify-between gap-3">
                   <span>{EXEMPT_LABEL[reason as keyof typeof EXEMPT_LABEL]}</span>
-                  <span>{formatKes(round2(amount))}</span>
+                  <span>{fmt(round2(amount))}</span>
                 </li>
               ))}
             </ul>
@@ -84,7 +86,7 @@ export default async function ReportPage({ searchParams }: { searchParams: Promi
         ) : null}
 
         <section className="border-t border-slate-200 pt-5">
-          <h2 className="mb-3 font-semibold">Payments without an eTIMS invoice ({missing.length})</h2>
+          <h2 className="mb-3 font-semibold">Payments without a {taxInvoiceLabel} ({missing.length})</h2>
           {missing.length === 0 ? (
             <p className="text-sm text-slate-500">None. Every payment that needs an invoice is backed.</p>
           ) : (
@@ -104,8 +106,8 @@ export default async function ReportPage({ searchParams }: { searchParams: Promi
                     <Td className="whitespace-nowrap">{formatDate(r.paidAt)}</Td>
                     <Td>{r.supplierName ?? r.counterparty}</Td>
                     <Td className="text-xs">{r.reference ?? "—"}</Td>
-                    <Td className="whitespace-nowrap text-right">{formatKes(r.amount)}</Td>
-                    <Td className="whitespace-nowrap text-right">{formatKes(r.unbacked)}</Td>
+                    <Td className="whitespace-nowrap text-right">{fmt(r.amount)}</Td>
+                    <Td className="whitespace-nowrap text-right">{fmt(r.unbacked)}</Td>
                   </Tr>
                 ))}
               </Tbody>
