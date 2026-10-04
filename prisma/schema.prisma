@@ -1,0 +1,170 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../lib/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum MemberRole {
+  OWNER
+  ACCOUNTANT
+  STAFF
+}
+
+enum PaymentSource {
+  MPESA
+  BANK
+  CASH
+  OTHER
+}
+
+// Why a payment does not need an eTIMS invoice. Labels and guidance live in lib/exemptions.ts.
+enum ExemptReason {
+  SALARIES
+  IMPORTS
+  INTEREST_BANK_CHARGES
+  AIRLINE_TICKETS
+  NON_RESIDENT
+  TAX_STATUTORY
+  OWN_TRANSFER
+  LOAN_REPAYMENT
+  NOT_AN_EXPENSE
+  OTHER
+}
+
+enum InvoiceStatus {
+  UNVERIFIED
+  VERIFIED
+  REJECTED
+}
+
+model User {
+  id           String       @id @default(cuid())
+  email        String       @unique
+  name         String
+  passwordHash String
+  createdAt    DateTime     @default(now())
+  memberships  Membership[]
+}
+
+model Business {
+  id            String          @id @default(cuid())
+  name          String
+  kraPin        String?
+  // Income tax rate applied to disallowed expenses when estimating tax at risk (30% for companies).
+  incomeTaxRate Decimal         @default(30) @db.Decimal(5, 2)
+  // Last month of the financial year (12 = December year end).
+  yearEndMonth  Int             @default(12)
+  createdAt     DateTime        @default(now())
+  memberships   Membership[]
+  suppliers     Supplier[]
+  invoices      Invoice[]
+  payments      Payment[]
+  importBatches ImportBatch[]
+}
+
+model Membership {
+  id         String     @id @default(cuid())
+  userId     String
+  businessId String
+  role       MemberRole @default(OWNER)
+  createdAt  DateTime   @default(now())
+  user       User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  business   Business   @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, businessId])
+}
+
+model Supplier {
+  id         String    @id @default(cuid())
+  businessId String
+  name       String
+  kraPin     String?
+  phone      String?
+  // Other spellings seen on M-Pesa/bank statements, e.g. "JOHN SUPPLIES LTD", used for matching.
+  aliases    String[]  @default([])
+  createdAt  DateTime  @default(now())
+  business   Business  @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  invoices   Invoice[]
+  payments   Payment[]
+
+  @@index([businessId])
+}
+
+model Invoice {
+  id            String          @id @default(cuid())
+  businessId    String
+  supplierId    String?
+  // eTIMS control unit invoice number as printed on the invoice.
+  invoiceNumber String
+  supplierName  String
+  supplierPin   String?
+  invoiceDate   DateTime        @db.Date
+  totalAmount   Decimal         @db.Decimal(14, 2)
+  vatAmount     Decimal         @default(0) @db.Decimal(14, 2)
+  description   String?
+  status        InvoiceStatus   @default(UNVERIFIED)
+  fileName      String?
+  fileType      String?
+  fileData      Bytes?
+  createdAt     DateTime        @default(now())
+  business      Business        @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  supplier      Supplier?       @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  allocations   Allocation[]
+
+  @@unique([businessId, invoiceNumber])
+  @@index([businessId, invoiceDate])
+}
+
+model Payment {
+  id                 String        @id @default(cuid())
+  businessId         String
+  supplierId         String?
+  importBatchId      String?
+  source             PaymentSource
+  // M-Pesa receipt number or bank reference. Used to skip duplicates on re-import.
+  reference          String?
+  paidAt             DateTime
+  amount             Decimal       @db.Decimal(14, 2)
+  counterparty       String
+  details            String?
+  exemptReason       ExemptReason?
+  exemptNote         String?
+  invoiceRequestedAt DateTime?
+  createdAt          DateTime      @default(now())
+  business           Business      @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  supplier           Supplier?     @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  importBatch        ImportBatch?  @relation(fields: [importBatchId], references: [id], onDelete: SetNull)
+  allocations        Allocation[]
+
+  @@unique([businessId, reference])
+  @@index([businessId, paidAt])
+}
+
+// Links part or all of a payment to part or all of an invoice.
+// One invoice can be paid in instalments, and one payment can settle several invoices.
+model Allocation {
+  id        String   @id @default(cuid())
+  paymentId String
+  invoiceId String
+  amount    Decimal  @db.Decimal(14, 2)
+  createdAt DateTime @default(now())
+  payment   Payment  @relation(fields: [paymentId], references: [id], onDelete: Cascade)
+  invoice   Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@unique([paymentId, invoiceId])
+}
+
+model ImportBatch {
+  id         String        @id @default(cuid())
+  businessId String
+  source     PaymentSource
+  fileName   String
+  imported   Int
+  skipped    Int
+  createdAt  DateTime      @default(now())
+  business   Business      @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  payments   Payment[]
+}

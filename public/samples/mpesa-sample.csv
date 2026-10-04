@@ -1,0 +1,10 @@
+Organisation Name,Duka Bora Hardware Ltd
+Statement Period,01/09/2026 - 30/09/2026
+
+Receipt No.,Completion Time,Initiation Time,Details,Transaction Status,Paid In,Withdrawn,Balance,Balance Confirmed,Reason Type,Other Party Info,Linked Transaction ID,A/C No.
+TJ11P2Q3R1,2026-09-22 10:15:22,2026-09-22 10:15:20,Merchant Payment to 512345 - MABATI CENTRE LTD,Completed,,-33500.00,220000.00,true,Merchant Payment,512345 - MABATI CENTRE LTD,,
+TJ21P2Q3R2,2026-09-23 11:02:10,2026-09-23 11:02:08,Pay Bill Online to 888880 - KPLC PREPAID Acc. 54123,Completed,,"-2,950.00",217050.00,true,Pay Bill,888880 - KPLC PREPAID,,54123
+TJ31P2Q3R3,2026-09-24 09:40:00,2026-09-24 09:40:00,Customer Payment from 254722000000 - JOHN DOE,Completed,"15,000.00",,232050.00,true,Payment,254722000000 - JOHN DOE,,
+TJ41P2Q3R4,2026-09-26 14:05:41,2026-09-26 14:05:40,Merchant Payment to 600100 - TOOLMART KENYA LTD,Completed,,"-19,400.00",212650.00,true,Merchant Payment,600100 - TOOLMART KENYA LTD,,
+TJ51P2Q3R5,2026-09-28 16:30:00,2026-09-28 16:30:00,Business Payment to 254733345678 - JUA KALI WELDERS,Completed,,"-7,500.00",205150.00,true,Business Payment,254733345678 - JUA KALI WELDERS,,
+TJ61P2Q3R6,2026-09-30 08:00:00,2026-09-30 08:00:00,Pay Bill Charge,Completed,,-55.00,205095.00,true,Pay Bill Charge,,,
