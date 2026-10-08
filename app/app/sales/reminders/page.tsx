@@ -29,7 +29,7 @@ export default async function RemindersPage({ searchParams }: { searchParams: Pr
   const current = FILTERS.find((f) => f.value === status)?.value ?? "all";
 
   const all = await overdueCustomers(business.id);
-  const now = Date.now();
+  const now = new Date().getTime();
   const needsChasing = (c: (typeof all)[number]) => !c.lastReminder || now - c.lastReminder.createdAt.getTime() > 7 * DAY_MS;
   const matches = {
     all: () => true,
