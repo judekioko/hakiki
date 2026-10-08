@@ -6,6 +6,7 @@ import { accountBalances, agedPayables, agedReceivables, profitAndLoss } from "@
 import { currentFinancialYear, financialYear } from "@/lib/periods";
 import { businessContext } from "@/lib/form-options";
 import { loadPayments } from "@/lib/coverage";
+import { businessInsights } from "@/lib/insights";
 import { stockLevels } from "@/lib/inventory";
 import { num, round2 } from "@/lib/money";
 import { PageHeader } from "@/components/page-header";
@@ -42,10 +43,12 @@ export default async function DashboardPage() {
   const missingInvoices = payments.filter((p) => p.status === "MISSING" || p.status === "PARTIAL").length;
   const lowStock = stock.filter((s) => s.reorderLevel !== null && s.onHand <= s.reorderLevel);
   const monthMax = Math.max(1, ...monthly.flatMap((m) => [m.income, m.expense]));
+  const intel = await businessInsights(business, cash);
 
   const todo = [
     drafts > 0 && { href: "/app/sales/invoices?status=DRAFT", text: `${drafts} draft invoice${drafts === 1 ? "" : "s"} not sent yet` },
-    overdue > 0 && { href: "/app/reports/aged-receivables", text: `${fmt(overdue)} overdue from customers` },
+    overdue > 0 && { href: "/app/sales/reminders", text: `${fmt(overdue)} overdue from customers: send reminders` },
+    intel.lateOrders > 0 && { href: "/app/purchase-orders", text: `${intel.lateOrders} purchase order${intel.lateOrders === 1 ? "" : "s"} late from the supplier` },
     unmatchedIn > 0 && { href: "/app/sales/receipts?filter=unmatched", text: `${unmatchedIn} payment${unmatchedIn === 1 ? "" : "s"} received not matched to a customer` },
     missingInvoices > 0 && { href: "/app/expense-check", text: `${missingInvoices} payment${missingInvoices === 1 ? "" : "s"} out without a supplier ${taxInvoiceLabel}` },
     lowStock.length > 0 && { href: "/app/items", text: `${lowStock.length} item${lowStock.length === 1 ? "" : "s"} at or below reorder level` },
@@ -79,6 +82,44 @@ export default async function DashboardPage() {
           hint={`Income ${fmt(pnl.totalIncome)} · Costs ${fmt(round2(pnl.totalCostOfSales + pnl.totalExpenses))}`}
         />
       </div>
+
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <StatCard
+          label="Sales this month"
+          value={fmt(intel.salesThisMonth)}
+          hint={intel.salesChange === null ? "No sales last month to compare" : `${intel.salesChange >= 0 ? "Up" : "Down"} ${Math.abs(intel.salesChange)}% on last month`}
+        />
+        <StatCard label="Stock on hand" value={fmt(intel.stockValue)} hint={lowStock.length > 0 ? `${lowStock.length} low` : "At cost"} />
+        <StatCard label="Quotations waiting" value={fmt(intel.openQuotes.value)} hint={`${intel.openQuotes.count} open`} />
+        <StatCard label="On order from suppliers" value={fmt(intel.onOrder)} hint={intel.lateOrders > 0 ? `${intel.lateOrders} late` : "Not yet received"} />
+      </div>
+
+      {intel.insights.length > 0 ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>What the numbers say</CardTitle>
+          </CardHeader>
+          <CardBody>
+            <ul className="space-y-2 text-sm">
+              {intel.insights.map((i, idx) => (
+                <li key={idx} className="flex gap-2">
+                  <span
+                    aria-hidden
+                    className={`mt-1.5 h-2 w-2 shrink-0 rounded-full ${i.tone === "good" ? "bg-teal-600" : i.tone === "warn" ? "bg-amber-500" : "bg-slate-400"}`}
+                  />
+                  {i.href ? (
+                    <Link href={i.href} className="text-slate-800 hover:text-teal-700 hover:underline">
+                      {i.text}
+                    </Link>
+                  ) : (
+                    <span className="text-slate-800">{i.text}</span>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </CardBody>
+        </Card>
+      ) : null}
 
       <div className="grid gap-6 lg:grid-cols-5">
         <Card className="lg:col-span-3">
