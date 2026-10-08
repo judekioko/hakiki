@@ -11,6 +11,7 @@ export default async function ReportsPage() {
   const reports = [
     { href: "/app/reports/profit-and-loss", title: "Profit & loss", body: "Income, cost of sales and expenses for any period." },
     { href: "/app/reports/balance-sheet", title: "Balance sheet", body: "What the business owns and owes on a date." },
+    { href: "/app/reports/cash-flow", title: "Cash flow", body: "Where your cash came from and where it went, by operating, investing and financing." },
     { href: "/app/reports/vat", title: `${pack.vatName} summary`, body: `Output ${pack.vatName} on sales less input ${pack.vatName} on purchases.` },
     { href: "/app/reports/aged-receivables", title: "Aged receivables", body: "Who owes you, and for how long." },
     { href: "/app/reports/aged-payables", title: "Aged payables", body: "Which suppliers you owe, and for how long." },

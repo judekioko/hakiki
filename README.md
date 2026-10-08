@@ -44,6 +44,8 @@ place, in the business's own currency.
 - **Opening balances:** bring in where the business stood when it started on Hakiki: account balances (bank, mobile
   money, cash, loans, capital...) as one balanced entry, unpaid customer invoices and unpaid supplier bills as normal
   documents that credit opening balance equity instead of sales or expenses, and opening stock through stock counts.
+- **Cash flow statement:** where cash came from and went to in any period (operating, investing, financing), built from
+  the same ledger lines as everything else, reconciling to the change in your bank, mobile money and cash balances.
 - **Purchases:** supplier bills (single total or line items), money paid out, suppliers, and the supplier tax-invoice
   check (eTIMS, EFRIS, EBM...) with WhatsApp requests for missing invoices.
 - **Statement import:** bank and mobile money CSVs. Money out becomes payments, money in becomes receipts. Columns are
