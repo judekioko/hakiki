@@ -38,6 +38,9 @@ place, in the business's own currency.
 - **Customer statements:** a printable statement per customer for any date range (balance brought forward, invoices,
   payments, credit notes, running balance), the unpaid invoices with ageing, and one-click WhatsApp / email messages.
   The balances use the same rules as the ledger, so all customers' statements add up to accounts receivable.
+- **Payment reminders:** a list of customers with overdue invoices (most overdue first) with a friendly, firm or final
+  notice prepared for each, sent from your own WhatsApp or email. Each send is recorded, so the list shows when and how
+  often a customer was last reminded, and you can filter to those not chased in the last week.
 - **Purchases:** supplier bills (single total or line items), money paid out, suppliers, and the supplier tax-invoice
   check (eTIMS, EFRIS, EBM...) with WhatsApp requests for missing invoices.
 - **Statement import:** bank and mobile money CSVs. Money out becomes payments, money in becomes receipts. Columns are

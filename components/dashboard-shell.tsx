@@ -15,6 +15,7 @@ const navSections: { title: string | null; items: NavItem[] }[] = [
       { href: "/app/sales/invoices", label: "Invoices" },
       { href: "/app/sales/recurring", label: "Recurring invoices" },
       { href: "/app/sales/credit-notes", label: "Credit notes" },
+      { href: "/app/sales/reminders", label: "Payment reminders" },
       { href: "/app/sales/receipts", label: "Money received" },
       { href: "/app/sales/customers", label: "Customers" },
     ],

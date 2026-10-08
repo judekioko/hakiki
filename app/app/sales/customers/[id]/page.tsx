@@ -23,6 +23,7 @@ export default async function CustomerPage({ params }: { params: Promise<{ id: s
     include: {
       salesInvoices: { include: { allocations: { select: { amount: true } }, creditAllocations: { select: { amount: true } } }, orderBy: { issueDate: "desc" } },
       receipts: { orderBy: { receivedAt: "desc" }, take: 20 },
+      reminders: { orderBy: { createdAt: "desc" }, take: 5 },
     },
   });
   if (!customer) notFound();
@@ -106,6 +107,26 @@ export default async function CustomerPage({ params }: { params: Promise<{ id: s
               )}
             </CardBody>
           </Card>
+
+          {customer.reminders.length > 0 ? (
+            <Card>
+              <CardHeader>
+                <CardTitle>Payment reminders sent</CardTitle>
+              </CardHeader>
+              <CardBody>
+                <ul className="divide-y divide-slate-100 text-sm">
+                  {customer.reminders.map((r) => (
+                    <li key={r.id} className="flex justify-between gap-3 py-2">
+                      <span>
+                        {formatDate(r.createdAt)} · {r.tone.toLowerCase()} by {r.channel === "WHATSAPP" ? "WhatsApp" : "email"} ({r.sentBy})
+                      </span>
+                      <span>{fmt(num(r.overdueAmount))}</span>
+                    </li>
+                  ))}
+                </ul>
+              </CardBody>
+            </Card>
+          ) : null}
         </div>
         <Card>
           <CardHeader>
