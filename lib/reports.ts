@@ -121,7 +121,7 @@ export async function vatSummary(businessId: string, from: Date, to: Date) {
 const DAY_MS = 24 * 60 * 60 * 1000;
 export const AGING_BUCKETS = ["Current", "1–30 days", "31–60 days", "61–90 days", "Over 90 days"] as const;
 
-function bucketFor(dueDate: Date, today: Date): number {
+export function bucketFor(dueDate: Date, today: Date): number {
   const daysOverdue = Math.floor((today.getTime() - dueDate.getTime()) / DAY_MS);
   if (daysOverdue <= 0) return 0;
   if (daysOverdue <= 30) return 1;

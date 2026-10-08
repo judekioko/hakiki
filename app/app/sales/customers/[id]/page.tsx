@@ -35,7 +35,14 @@ export default async function CustomerPage({ params }: { params: Promise<{ id: s
       <PageHeader
         title={customer.name}
         description={`Owes you ${fmt(owed)}`}
-        action={<LinkButton href={`/app/sales/invoices/new?customer=${customer.id}`}>New invoice</LinkButton>}
+        action={
+          <div className="flex gap-2">
+            <LinkButton href={`/app/sales/customers/${customer.id}/statement`} variant="secondary">
+              Statement
+            </LinkButton>
+            <LinkButton href={`/app/sales/invoices/new?customer=${customer.id}`}>New invoice</LinkButton>
+          </div>
+        }
       />
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="space-y-6 lg:col-span-2">

@@ -35,6 +35,9 @@ place, in the business's own currency.
 - **Supplier credit notes:** record a credit from a supplier (goods returned, overcharge, discount), optionally taking
   returned stock out of inventory. It reverses the bill's cost and input tax, is applied to the bill it corrects, and
   reduces the bill's balance in payables ageing and payment matching.
+- **Customer statements:** a printable statement per customer for any date range (balance brought forward, invoices,
+  payments, credit notes, running balance), the unpaid invoices with ageing, and one-click WhatsApp / email messages.
+  The balances use the same rules as the ledger, so all customers' statements add up to accounts receivable.
 - **Purchases:** supplier bills (single total or line items), money paid out, suppliers, and the supplier tax-invoice
   check (eTIMS, EFRIS, EBM...) with WhatsApp requests for missing invoices.
 - **Statement import:** bank and mobile money CSVs. Money out becomes payments, money in becomes receipts. Columns are
