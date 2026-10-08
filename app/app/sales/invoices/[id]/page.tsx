@@ -53,9 +53,10 @@ export default async function SalesInvoicePage({ params }: { params: Promise<{ i
             ← Invoices
           </Link>
           <Badge tone={display.tone}>{display.label}</Badge>
+          {invoice.isOpening ? <Badge tone="amber">Opening balance</Badge> : null}
         </div>
         <div className="flex flex-wrap gap-2">
-          {invoice.status !== "VOID" ? (
+          {invoice.status !== "VOID" && !invoice.isOpening ? (
             <LinkButton href={`/app/sales/invoices/${invoice.id}/edit`} variant="secondary">
               Edit
             </LinkButton>

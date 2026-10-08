@@ -18,7 +18,7 @@ export default async function EditSalesInvoicePage({ params }: { params: Promise
     include: { lines: { orderBy: { position: "asc" } } },
   });
   if (!invoice) notFound();
-  if (invoice.status === "VOID") redirect(`/app/sales/invoices/${id}`);
+  if (invoice.status === "VOID" || invoice.isOpening) redirect(`/app/sales/invoices/${id}`);
 
   const [customers, items, taxRates, accounts] = await Promise.all([
     prisma.customer.findMany({ where: { businessId: business.id }, orderBy: { name: "asc" }, select: { id: true, name: true } }),

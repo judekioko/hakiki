@@ -77,6 +77,7 @@ enum JournalSource {
   STOCK_ADJUSTMENT
   CREDIT_NOTE
   SUPPLIER_CREDIT
+  OPENING_BALANCE
 }
 
 enum CreditNoteStatus {
@@ -170,6 +171,8 @@ model Business {
   booksReadyAt          DateTime?
   // Books are closed through this date (inclusive): nothing dated on or before it can be added, changed or removed.
   lockedThrough         DateTime?          @db.Date
+  // The date the opening balances were taken from (the day before the books started in Hakiki).
+  openingDate           DateTime?          @db.Date
   createdAt             DateTime           @default(now())
   memberships           Membership[]
   suppliers             Supplier[]
@@ -392,6 +395,8 @@ model SalesInvoice {
   lines              SalesInvoiceLine[]
   allocations        ReceiptAllocation[]
   creditAllocations  CreditAllocation[]
+  // An unpaid invoice carried over from before Hakiki: it posts against opening balance equity, not sales.
+  isOpening          Boolean             @default(false)
   // The recurring invoice that generated this one, if any.
   recurringInvoiceId String?
   recurringInvoice   RecurringInvoice?   @relation(fields: [recurringInvoiceId], references: [id], onDelete: SetNull)
@@ -482,6 +487,8 @@ model Invoice {
   supplier          Supplier?                  @relation(fields: [supplierId], references: [id], onDelete: SetNull)
   allocations       Allocation[]
   lines             BillLine[]
+  // An unpaid bill carried over from before Hakiki: it posts against opening balance equity, not an expense.
+  isOpening         Boolean                    @default(false)
   // The purchase order this bill was raised from.
   purchaseOrderId   String?
   purchaseOrder     PurchaseOrder?             @relation(fields: [purchaseOrderId], references: [id], onDelete: SetNull)

@@ -16,6 +16,7 @@ export const AUDIT_ENTITIES: Record<string, string> = {
   PERIOD_LOCK: "Closed books",
   RECONCILIATION: "Reconciliation",
   QUOTATION: "Quotation",
+  OPENING_BALANCES: "Opening balances",
   REMINDER: "Payment reminder",
   PURCHASE_ORDER: "Purchase order",
   SUPPLIER_CREDIT: "Supplier credit note",

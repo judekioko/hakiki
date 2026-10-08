@@ -44,6 +44,7 @@ const navSections: { title: string | null; items: NavItem[] }[] = [
     items: [
       { href: "/app/reports", label: "Reports" },
       { href: "/app/accounts", label: "Chart of accounts" },
+      { href: "/app/opening-balances", label: "Opening balances" },
       { href: "/app/journal", label: "Journal" },
       { href: "/app/reconcile", label: "Bank reconciliation" },
       { href: "/app/close-books", label: "Close the books" },

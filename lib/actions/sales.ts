@@ -127,6 +127,7 @@ export async function saveSalesInvoice(_prev: ActionState, formData: FormData): 
     });
     if (!existing) return { error: "Invoice not found" };
     if (existing.status === "VOID") return { error: "A void invoice cannot be edited" };
+    if (existing.isOpening) return { error: "This is an opening balance. Remove and re-enter it under Opening balances." };
     const paid = settledAmount(existing);
     if (paid > sums.total + 0.01) return { error: "The new total is less than what the customer has already paid" };
     await prisma.$transaction([

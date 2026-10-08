@@ -41,6 +41,9 @@ place, in the business's own currency.
 - **Payment reminders:** a list of customers with overdue invoices (most overdue first) with a friendly, firm or final
   notice prepared for each, sent from your own WhatsApp or email. Each send is recorded, so the list shows when and how
   often a customer was last reminded, and you can filter to those not chased in the last week.
+- **Opening balances:** bring in where the business stood when it started on Hakiki: account balances (bank, mobile
+  money, cash, loans, capital...) as one balanced entry, unpaid customer invoices and unpaid supplier bills as normal
+  documents that credit opening balance equity instead of sales or expenses, and opening stock through stock counts.
 - **Purchases:** supplier bills (single total or line items), money paid out, suppliers, and the supplier tax-invoice
   check (eTIMS, EFRIS, EBM...) with WhatsApp requests for missing invoices.
 - **Statement import:** bank and mobile money CSVs. Money out becomes payments, money in becomes receipts. Columns are
