@@ -2,6 +2,7 @@ import "server-only";
 import { prisma } from "./prisma";
 import { num, round2 } from "./money";
 import { averageCost } from "./inventory";
+import { assertOpen } from "./period-lock";
 import type { ExemptReason, JournalSource, PaymentSource } from "./generated/prisma/client";
 
 // Every document (sales invoice, bill, payment...) owns at most one journal entry.
@@ -17,7 +18,17 @@ export async function accountIdsByKey(businessId: string): Promise<Record<string
   return Object.fromEntries(accounts.map((a) => [a.systemKey!, a.id]));
 }
 
+// Last line of defence for closed periods: no entry dated in one can be written, rewritten or deleted.
+async function assertEntriesOpen(businessId: string, sourceType: JournalSource, sourceId: string, newDate?: Date) {
+  const business = await prisma.business.findUnique({ where: { id: businessId }, select: { lockedThrough: true } });
+  if (!business?.lockedThrough) return;
+  const existing = await prisma.journalEntry.findMany({ where: { sourceType, sourceId }, select: { date: true } });
+  assertOpen(business, newDate, ...existing.map((e) => e.date));
+}
+
 export async function removeEntry(sourceType: JournalSource, sourceId: string) {
+  const existing = await prisma.journalEntry.findFirst({ where: { sourceType, sourceId }, select: { businessId: true } });
+  if (existing) await assertEntriesOpen(existing.businessId, sourceType, sourceId);
   await prisma.journalEntry.deleteMany({ where: { sourceType, sourceId } });
 }
 
@@ -40,6 +51,7 @@ export async function replaceEntry(
     merged.set(key, existing);
   }
   const lines = [...merged.values()];
+  await assertEntriesOpen(businessId, sourceType, sourceId, lines.length > 0 ? entry.date : undefined);
   const totalDebit = round2(lines.reduce((s, l) => s + l.debit, 0));
   const totalCredit = round2(lines.reduce((s, l) => s + l.credit, 0));
   if (Math.abs(totalDebit - totalCredit) > 0.01) {

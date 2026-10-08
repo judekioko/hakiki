@@ -40,6 +40,7 @@ const navSections: { title: string | null; items: NavItem[] }[] = [
       { href: "/app/reports", label: "Reports" },
       { href: "/app/accounts", label: "Chart of accounts" },
       { href: "/app/journal", label: "Journal" },
+      { href: "/app/close-books", label: "Close the books" },
       { href: "/app/audit", label: "Audit trail" },
       { href: "/app/payments/import", label: "Import statement" },
     ],

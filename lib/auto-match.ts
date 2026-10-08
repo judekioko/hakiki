@@ -2,15 +2,21 @@ import "server-only";
 import { prisma } from "./prisma";
 import { num, round2 } from "./money";
 import { postPayment } from "./ledger";
+import { isLocked } from "./period-lock";
 import { isConfidentMatch, scoreMatch, type MatchInvoice, type MatchPayment } from "./matching";
 
 // Payments that still need invoice backing, with what is left unallocated.
 export async function openPayments(businessId: string): Promise<MatchPayment[]> {
-  const payments = await prisma.payment.findMany({
-    where: { businessId, exemptReason: null },
-    include: { allocations: { select: { amount: true } } },
-  });
+  const [payments, business] = await Promise.all([
+    prisma.payment.findMany({
+      where: { businessId, exemptReason: null },
+      include: { allocations: { select: { amount: true } } },
+    }),
+    prisma.business.findUnique({ where: { id: businessId }, select: { lockedThrough: true } }),
+  ]);
+  // Payments in a closed period can no longer be changed, so they are never matched automatically.
   return payments
+    .filter((p) => !isLocked({ lockedThrough: business?.lockedThrough ?? null }, p.paidAt))
     .map((p) => ({
       id: p.id,
       paidAt: p.paidAt,

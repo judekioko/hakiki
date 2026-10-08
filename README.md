@@ -16,6 +16,9 @@ place, in the business's own currency.
   against an invoice is applied to it automatically; unused credit can be applied to another invoice of the same customer.
 - **Audit trail:** every create, edit, void, delete and approval is logged with who did it and when (`lib/audit.ts`,
   `/app/audit`). Entries are append-only.
+- **Closing the books:** lock everything up to a date (Accounting → Close the books). Documents, journals, stock
+  adjustments and pay runs dated in a closed period cannot be added, edited, voided or deleted, statement imports skip
+  closed-period rows, and the ledger itself refuses the write (`lib/period-lock.ts`). Only owners can reopen.
 - **Purchases:** supplier bills (single total or line items), money paid out, suppliers, and the supplier tax-invoice
   check (eTIMS, EFRIS, EBM...) with WhatsApp requests for missing invoices.
 - **Statement import:** bank and mobile money CSVs. Money out becomes payments, money in becomes receipts. Columns are

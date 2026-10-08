@@ -124,6 +124,8 @@ model Business {
   payrollPersonalRelief Decimal         @default(0) @db.Decimal(14, 2)
   // Set once the default chart of accounts and tax rates have been created.
   booksReadyAt          DateTime?
+  // Books are closed through this date (inclusive): nothing dated on or before it can be added, changed or removed.
+  lockedThrough         DateTime?       @db.Date
   createdAt             DateTime        @default(now())
   memberships           Membership[]
   suppliers             Supplier[]

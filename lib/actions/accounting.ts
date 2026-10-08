@@ -6,6 +6,7 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { audit } from "@/lib/audit";
 import { requireBusiness } from "@/lib/business";
+import { assertOpen, lockMessage } from "@/lib/period-lock";
 import { round2 } from "@/lib/money";
 import { replaceEntry, removeEntry } from "@/lib/ledger";
 import { accountSchema, firstError, journalLineSchema, parseJsonField, taxRateSchema } from "@/lib/validators";
@@ -64,6 +65,8 @@ export async function createManualJournal(_prev: ActionState, formData: FormData
   const memo = String(formData.get("memo") ?? "").trim();
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return { error: "Enter a valid date" };
   if (memo.length < 3) return { error: "Describe what this journal is for" };
+  const journalLock = lockMessage(business, new Date(`${date}T12:00:00+03:00`));
+  if (journalLock) return { error: journalLock };
 
   const parsed = parseJsonField(formData.get("lines"), manualLinesSchema);
   if (parsed.error) return { error: parsed.error };
@@ -95,6 +98,7 @@ export async function deleteManualJournal(formData: FormData) {
     where: { id: String(formData.get("entryId")), businessId: business.id, sourceType: "MANUAL" },
   });
   if (entry?.sourceId) {
+    assertOpen(business, entry.date);
     await removeEntry("MANUAL", entry.sourceId);
     await audit(business.id, "DELETE", "JOURNAL", entry.sourceId, `Deleted manual journal "${entry.memo}"`);
   }

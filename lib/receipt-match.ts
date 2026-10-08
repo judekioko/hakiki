@@ -4,6 +4,7 @@ import { AMOUNT_TOLERANCE, num, round2 } from "./money";
 import { nameSimilarity, normaliseAlias } from "./matching";
 import { postReceipt } from "./ledger";
 import { settledAmount } from "./sales";
+import { isLocked } from "./period-lock";
 
 export async function openSalesInvoices(businessId: string) {
   const invoices = await prisma.salesInvoice.findMany({
@@ -27,13 +28,16 @@ export async function openSalesInvoices(businessId: string) {
 // Applies money received to an open sales invoice when the amount matches exactly and the payer is the customer
 // (or the invoice number appears in the payment details, as with paybill account numbers).
 export async function runReceiptAutoMatch(businessId: string): Promise<number> {
-  const [receipts, invoices] = await Promise.all([
+  const [allReceipts, invoices, business] = await Promise.all([
     prisma.receipt.findMany({
       where: { businessId, allocations: { none: {} }, categoryAccountId: null },
       orderBy: { receivedAt: "asc" },
     }),
     openSalesInvoices(businessId),
+    prisma.business.findUnique({ where: { id: businessId }, select: { lockedThrough: true } }),
   ]);
+  // Money received in a closed period can no longer be changed, so it is never matched automatically.
+  const receipts = allReceipts.filter((r) => !isLocked({ lockedThrough: business?.lockedThrough ?? null }, r.receivedAt));
   let linked = 0;
 
   for (const receipt of receipts) {

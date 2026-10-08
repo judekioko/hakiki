@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { requireBusiness } from "@/lib/business";
+import { lockMessage } from "@/lib/period-lock";
 import { num, round2 } from "@/lib/money";
 import { accountIdsByKey, replaceEntry } from "@/lib/ledger";
 import { averageCost } from "@/lib/inventory";
@@ -93,6 +94,8 @@ export async function adjustStock(_prev: ActionState, formData: FormData): Promi
   if (!Number.isFinite(quantity) || quantity === 0) return { error: "Enter the quantity to add (positive) or remove (negative)" };
   const date = String(formData.get("date") ?? "");
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return { error: "Enter a valid date" };
+  const adjustLock = lockMessage(business, new Date(`${date}T12:00:00+03:00`));
+  if (adjustLock) return { error: adjustLock };
 
   const enteredCost = Number(formData.get("unitCost") || 0);
   const unitCost = quantity > 0 && enteredCost > 0 ? enteredCost : await averageCost(item.id);

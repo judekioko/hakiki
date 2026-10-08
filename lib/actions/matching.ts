@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { prisma } from "@/lib/prisma";
 import { requireBusiness } from "@/lib/business";
+import { assertDocumentOpen } from "@/lib/period-lock";
 import { num, round2 } from "@/lib/money";
 import { learnAlias } from "@/lib/suppliers";
 import { runAutoMatch } from "@/lib/auto-match";
@@ -22,6 +23,7 @@ export async function linkPaymentToInvoice(formData: FormData) {
   ]);
   if (!payment || !invoice) throw new Error("Payment or invoice not found");
   if (payment.allocations.some((a) => a.invoiceId === invoice.id)) return;
+  await assertDocumentOpen(business, "payment", payment.id);
 
   const paymentOpen = num(payment.amount) - payment.allocations.reduce((s, a) => s + num(a.amount), 0);
   const invoiceOpen = num(invoice.totalAmount) - invoice.allocations.reduce((s, a) => s + num(a.amount), 0);
@@ -47,6 +49,7 @@ export async function unlinkAllocation(formData: FormData) {
     where: { id: String(formData.get("allocationId")), payment: { businessId: business.id } },
   });
   if (!allocation) return;
+  await assertDocumentOpen(business, "payment", allocation.paymentId);
   await prisma.allocation.delete({ where: { id: allocation.id } });
   await postPayment(allocation.paymentId);
   revalidatePath("/app", "layout");

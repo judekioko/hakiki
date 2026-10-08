@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { audit } from "@/lib/audit";
 import { requireBusiness } from "@/lib/business";
+import { assertDocumentOpen, isLocked, lockMessage } from "@/lib/period-lock";
 import { parseStatement } from "@/lib/statement-import";
 import { normaliseAlias } from "@/lib/matching";
 import { aliasIndex } from "@/lib/suppliers";
@@ -62,7 +63,9 @@ export async function importStatement(_prev: ActionState, formData: FormData): P
     (await prisma.payment.findMany({ where: { businessId: business.id, reference: { in: outRefs } }, select: { reference: true } })).map((p) => p.reference)
   );
   const supplierAliases = await aliasIndex(business.id);
-  const freshOut = dedupe(parsed.payments, existingOut);
+  const dedupedOut = dedupe(parsed.payments, existingOut);
+  const freshOut = dedupedOut.filter((p) => !isLocked(business, p.paidAt));
+  let closedRows = dedupedOut.length - freshOut.length;
   await prisma.payment.createMany({
     data: freshOut.map((p) => ({
       businessId: business.id,
@@ -88,7 +91,9 @@ export async function importStatement(_prev: ActionState, formData: FormData): P
     const customers = await prisma.customer.findMany({ where: { businessId: business.id }, select: { id: true, aliases: true } });
     const customerAliases = new Map<string, string>();
     for (const c of customers) for (const a of c.aliases) customerAliases.set(a, c.id);
-    freshIn = dedupe(parsed.incoming, existingIn);
+    const dedupedIn = dedupe(parsed.incoming, existingIn);
+    freshIn = dedupedIn.filter((p) => !isLocked(business, p.paidAt));
+    closedRows += dedupedIn.length - freshIn.length;
     await prisma.receipt.createMany({
       data: freshIn.map((p) => ({
         businessId: business.id,
@@ -105,7 +110,7 @@ export async function importStatement(_prev: ActionState, formData: FormData): P
     });
   }
 
-  const skipped = parsed.payments.length - freshOut.length + (includeIncoming ? parsed.incoming.length - freshIn.length : 0) + parsed.skippedRows;
+  const skipped = parsed.payments.length - freshOut.length + (includeIncoming ? parsed.incoming.length - freshIn.length : 0) + parsed.skippedRows - closedRows;
   await prisma.importBatch.update({ where: { id: batch.id }, data: { imported: freshOut.length + freshIn.length, skipped } });
 
   const [newPayments, newReceipts] = await Promise.all([
@@ -123,6 +128,7 @@ export async function importStatement(_prev: ActionState, formData: FormData): P
   if (includeIncoming) parts.push(`${freshIn.length} received`);
   else if (parsed.incomingRows) parts.push(`${parsed.incomingRows} incoming ignored`);
   if (skipped) parts.push(`${skipped} skipped or already imported`);
+  if (closedRows) parts.push(`${closedRows} in a closed period (not imported)`);
   if (matched + matchedIn) parts.push(`${matched + matchedIn} matched automatically`);
   return { success: parts.join(" · ") };
 }
@@ -151,6 +157,8 @@ export async function createPayment(_prev: ActionState, formData: FormData): Pro
   });
   if (!parsed.success) return { error: firstError(parsed.error) };
   const data = parsed.data;
+  const paidLock = lockMessage(business, new Date(`${data.paidAt}T12:00:00+03:00`));
+  if (paidLock) return { error: paidLock };
   const reference = data.reference?.toUpperCase() ?? null;
 
   if (reference) {
@@ -191,6 +199,7 @@ export async function setPaymentCategory(formData: FormData) {
   const { business } = await requireBusiness();
   const paymentId = String(formData.get("paymentId"));
   const categoryAccountId = await validCategory(business.id, formData.get("categoryAccountId"));
+  await assertDocumentOpen(business, "payment", paymentId);
   const updated = await prisma.payment.updateMany({
     where: { id: paymentId, businessId: business.id },
     data: { categoryAccountId },
@@ -207,6 +216,7 @@ export async function markExempt(formData: FormData) {
     exemptNote: formData.get("exemptNote") ?? "",
   });
   if (!parsed.success) throw new Error(firstError(parsed.error));
+  await assertDocumentOpen(business, "payment", parsed.data.paymentId);
 
   const updated = await prisma.payment.updateMany({
     where: { id: parsed.data.paymentId, businessId: business.id },
@@ -219,6 +229,7 @@ export async function markExempt(formData: FormData) {
 export async function clearExempt(formData: FormData) {
   const { business } = await requireBusiness();
   const paymentId = String(formData.get("paymentId"));
+  await assertDocumentOpen(business, "payment", paymentId);
   const updated = await prisma.payment.updateMany({
     where: { id: paymentId, businessId: business.id },
     data: { exemptReason: null, exemptNote: null },
@@ -235,6 +246,7 @@ export async function bulkMarkExempt(formData: FormData) {
   if (!reason.success || ids.length === 0) return;
 
   const owned = await prisma.payment.findMany({ where: { id: { in: ids }, businessId: business.id }, select: { id: true } });
+  for (const p of owned) await assertDocumentOpen(business, "payment", p.id);
   await prisma.payment.updateMany({
     where: { id: { in: owned.map((p) => p.id) } },
     data: { exemptReason: reason.data },
@@ -246,6 +258,7 @@ export async function bulkMarkExempt(formData: FormData) {
 export async function deletePayment(formData: FormData) {
   const { business } = await requireBusiness();
   const paymentId = String(formData.get("paymentId"));
+  await assertDocumentOpen(business, "payment", paymentId);
   const deleted = await prisma.payment.deleteMany({ where: { id: paymentId, businessId: business.id } });
   if (deleted.count) {
     await postPayment(paymentId);

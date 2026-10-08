@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { requireBusiness } from "@/lib/business";
+import { assertDocumentOpen, documentLockMessage, lockMessage } from "@/lib/period-lock";
 import { num, round2 } from "@/lib/money";
 import { normaliseAlias } from "@/lib/matching";
 import { audit } from "@/lib/audit";
@@ -82,6 +83,10 @@ export async function saveSalesInvoice(_prev: ActionState, formData: FormData): 
   if (!parsed.success) return { error: firstError(parsed.error) };
   const data = parsed.data;
   if (data.dueDate < data.issueDate) return { error: "The due date cannot be before the invoice date" };
+  const editingId = String(formData.get("invoiceId") ?? "");
+  const issueAt = new Date(`${data.issueDate}T00:00:00Z`);
+  const locked = editingId ? await documentLockMessage(business, "salesInvoice", editingId, issueAt) : lockMessage(business, issueAt);
+  if (locked) return { error: locked };
 
   const lineInput = parseJsonField(formData.get("lines"), linesSchema);
   if (lineInput.error) return { error: lineInput.error };
@@ -169,6 +174,7 @@ export async function markInvoiceSent(formData: FormData) {
   const { business } = await requireBusiness();
   const invoice = await ownedInvoice(business.id, formData);
   if (!invoice || invoice.status !== "DRAFT") return;
+  await assertDocumentOpen(business, "salesInvoice", invoice.id);
   await prisma.salesInvoice.update({ where: { id: invoice.id }, data: { status: "SENT" } });
   await postSalesInvoice(invoice.id);
   await runReceiptAutoMatch(business.id);
@@ -182,6 +188,8 @@ export async function voidInvoice(formData: FormData) {
   if (!invoice || invoice.status === "VOID") return;
   // Payments applied to the invoice go back to being unapplied money from the customer.
   const receiptIds = invoice.allocations.map((a) => a.receiptId);
+  await assertDocumentOpen(business, "salesInvoice", invoice.id);
+  for (const receiptId of receiptIds) await assertDocumentOpen(business, "receipt", receiptId);
   await prisma.receiptAllocation.deleteMany({ where: { invoiceId: invoice.id } });
   await prisma.creditAllocation.deleteMany({ where: { invoiceId: invoice.id } });
   await prisma.salesInvoice.update({ where: { id: invoice.id }, data: { status: "VOID" } });
@@ -230,6 +238,9 @@ export async function recordReceipt(_prev: ActionState, formData: FormData): Pro
     where: { id: String(formData.get("moneyAccountId") ?? ""), businessId: business.id, moneyKind: { not: null } },
   });
   if (!account) return { error: "Choose the account the money went into" };
+
+  const receivedLock = lockMessage(business, new Date(`${data.receivedAt}T12:00:00+03:00`));
+  if (receivedLock) return { error: receivedLock };
 
   const reference = data.reference?.toUpperCase() ?? null;
   if (reference && (await prisma.receipt.findFirst({ where: { businessId: business.id, reference } }))) {
@@ -293,6 +304,7 @@ export async function applyReceiptToInvoice(formData: FormData) {
     }),
   ]);
   if (!receipt || !invoice || receipt.allocations.some((a) => a.invoiceId === invoice.id)) return;
+  await assertDocumentOpen(business, "receipt", receipt.id);
 
   const receiptOpen = num(receipt.amount) - receipt.allocations.reduce((s, a) => s + num(a.amount), 0);
   const invoiceOpen = num(invoice.total) - settledAmount(invoice);
@@ -319,6 +331,7 @@ export async function removeReceiptAllocation(formData: FormData) {
     where: { id: String(formData.get("allocationId")), receipt: { businessId: business.id } },
   });
   if (!allocation) return;
+  await assertDocumentOpen(business, "receipt", allocation.receiptId);
   await prisma.receiptAllocation.delete({ where: { id: allocation.id } });
   await postReceipt(allocation.receiptId);
   revalidateAll();
@@ -331,6 +344,7 @@ export async function setReceiptCategory(formData: FormData) {
   const account = value
     ? await prisma.account.findFirst({ where: { id: value, businessId: business.id, moneyKind: null } })
     : null;
+  await assertDocumentOpen(business, "receipt", receiptId);
   const updated = await prisma.receipt.updateMany({
     where: { id: receiptId, businessId: business.id },
     data: { categoryAccountId: account?.id ?? null },
@@ -347,6 +361,7 @@ export async function setReceiptCustomer(formData: FormData) {
   });
   const receipt = await prisma.receipt.findFirst({ where: { id: receiptId, businessId: business.id } });
   if (!customer || !receipt) return;
+  await assertDocumentOpen(business, "receipt", receipt.id);
   await prisma.receipt.update({ where: { id: receipt.id }, data: { customerId: customer.id } });
   const alias = normaliseAlias(receipt.payer);
   if (!customer.aliases.includes(alias)) {
@@ -360,6 +375,7 @@ export async function setReceiptCustomer(formData: FormData) {
 export async function deleteReceipt(formData: FormData) {
   const { business } = await requireBusiness();
   const receiptId = String(formData.get("receiptId"));
+  await assertDocumentOpen(business, "receipt", receiptId);
   const deleted = await prisma.receipt.deleteMany({ where: { id: receiptId, businessId: business.id } });
   if (deleted.count) {
     await postReceipt(receiptId);

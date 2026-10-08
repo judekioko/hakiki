@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { audit } from "@/lib/audit";
 import { requireBusiness } from "@/lib/business";
+import { assertDocumentOpen, lockMessage } from "@/lib/period-lock";
 import { findOrCreateSupplier } from "@/lib/suppliers";
 import { runAutoMatch } from "@/lib/auto-match";
 import { postBill, postPayment } from "@/lib/ledger";
@@ -31,6 +32,8 @@ export async function createInvoice(_prev: ActionState, formData: FormData): Pro
   });
   if (!parsed.success) return { error: firstError(parsed.error) };
   const data = parsed.data;
+  const billLock = lockMessage(business, new Date(`${data.invoiceDate}T00:00:00Z`));
+  if (billLock) return { error: billLock };
   const pin = taxIdFor(business.country).safeParse(data.supplierPin ?? "");
   if (!pin.success) return { error: firstError(pin.error) };
   const supplierPin = pin.data;
@@ -125,6 +128,7 @@ export async function setInvoiceStatus(formData: FormData) {
   // A rejected invoice cannot back an expense, so release its payments.
   if (status === "REJECTED") {
     const released = await prisma.allocation.findMany({ where: { invoiceId, invoice: { businessId: business.id } } });
+    for (const a of released) await assertDocumentOpen(business, "payment", a.paymentId);
     await prisma.allocation.deleteMany({ where: { id: { in: released.map((a) => a.id) } } });
     for (const a of released) await postPayment(a.paymentId);
   }
@@ -135,6 +139,8 @@ export async function deleteInvoice(formData: FormData) {
   const { business } = await requireBusiness();
   const invoiceId = String(formData.get("invoiceId"));
   const affected = await prisma.allocation.findMany({ where: { invoiceId, invoice: { businessId: business.id } } });
+  await assertDocumentOpen(business, "bill", invoiceId);
+  for (const a of affected) await assertDocumentOpen(business, "payment", a.paymentId);
   const deleted = await prisma.invoice.deleteMany({ where: { id: invoiceId, businessId: business.id } });
   if (deleted.count) {
     await audit(business.id, "DELETE", "BILL", invoiceId, "Deleted a supplier bill");
