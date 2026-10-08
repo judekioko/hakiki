@@ -2,6 +2,7 @@ import "server-only";
 import { prisma } from "./prisma";
 import { num, round2 } from "./money";
 import type { AccountType } from "./generated/prisma/client";
+import { settledAmount } from "./sales";
 
 export type AccountBalance = {
   id: string;
@@ -141,11 +142,15 @@ function addToAging(rows: Map<string, AgingRow>, id: string, name: string, bucke
 export async function agedReceivables(businessId: string, today = new Date()) {
   const invoices = await prisma.salesInvoice.findMany({
     where: { businessId, status: "SENT" },
-    include: { customer: { select: { id: true, name: true } }, allocations: { select: { amount: true } } },
+    include: {
+      customer: { select: { id: true, name: true } },
+      allocations: { select: { amount: true } },
+      creditAllocations: { select: { amount: true } },
+    },
   });
   const rows = new Map<string, AgingRow>();
   for (const inv of invoices) {
-    const open = round2(num(inv.total) - inv.allocations.reduce((s, a) => s + num(a.amount), 0));
+    const open = round2(num(inv.total) - settledAmount(inv));
     if (open <= 0.01) continue;
     addToAging(rows, inv.customer.id, inv.customer.name, bucketFor(inv.dueDate, today), open);
   }

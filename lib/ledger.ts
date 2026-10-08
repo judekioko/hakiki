@@ -265,3 +265,46 @@ export async function postPayRun(payRunId: string) {
     ],
   });
 }
+
+export async function postCreditNote(creditNoteId: string) {
+  const note = await prisma.creditNote.findUnique({
+    where: { id: creditNoteId },
+    include: { lines: { include: { item: true } }, customer: { select: { name: true } } },
+  });
+  await prisma.stockMovement.deleteMany({ where: { sourceType: "CREDIT_NOTE", sourceId: creditNoteId } });
+  if (!note || note.status !== "ISSUED") return removeEntry("CREDIT_NOTE", creditNoteId);
+
+  const keys = await accountIdsByKey(note.businessId);
+  // The exact reverse of a sales invoice: take back the sale and the tax, reduce what the customer owes.
+  const lines: Line[] = [
+    { accountId: keys.AR, credit: num(note.total) },
+    { accountId: keys.VAT_OUT, debit: num(note.taxTotal) },
+  ];
+  for (const line of note.lines) {
+    lines.push({ accountId: line.accountId, debit: num(line.lineTotal) });
+    if (note.restock && line.item?.kind === "INVENTORY" && line.itemId) {
+      const qty = num(line.quantity);
+      const unitCost = await averageCost(line.itemId);
+      const cost = round2(unitCost * qty);
+      await prisma.stockMovement.create({
+        data: {
+          businessId: note.businessId,
+          itemId: line.itemId,
+          date: note.issueDate,
+          quantity: qty,
+          unitCost,
+          sourceType: "CREDIT_NOTE",
+          sourceId: note.id,
+          note: `Credit note ${note.number}`,
+        },
+      });
+      lines.push({ accountId: keys.INVENTORY, debit: cost }, { accountId: keys.COGS, credit: cost });
+    }
+  }
+
+  await replaceEntry(note.businessId, "CREDIT_NOTE", note.id, {
+    date: note.issueDate,
+    memo: `Credit note ${note.number} to ${note.customer.name}`,
+    lines,
+  });
+}

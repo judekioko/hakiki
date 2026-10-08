@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
+import { audit } from "@/lib/audit";
 import { requireBusiness } from "@/lib/business";
 import { round2 } from "@/lib/money";
 import { replaceEntry, removeEntry } from "@/lib/ledger";
@@ -32,6 +33,7 @@ export async function createAccount(_prev: ActionState, formData: FormData): Pro
   await prisma.account.create({
     data: { businessId: business.id, code: d.code, name: d.name, type: d.type, moneyKind: d.moneyKind ?? null, description: d.description ?? null },
   });
+  await audit(business.id, "CREATE", "ACCOUNT", null, `Created account ${d.code} ${d.name}`);
   revalidateAll();
   return { success: `Added ${d.code} ${d.name}` };
 }
@@ -82,6 +84,7 @@ export async function createManualJournal(_prev: ActionState, formData: FormData
     memo,
     lines: lines.map((l) => ({ accountId: l.accountId, debit: l.debit, credit: l.credit, description: l.description || undefined })),
   });
+  await audit(business.id, "CREATE", "JOURNAL", sourceId, `Manual journal "${memo}" for ${debit.toFixed(2)}`);
   revalidateAll();
   redirect("/app/journal");
 }
@@ -91,7 +94,10 @@ export async function deleteManualJournal(formData: FormData) {
   const entry = await prisma.journalEntry.findFirst({
     where: { id: String(formData.get("entryId")), businessId: business.id, sourceType: "MANUAL" },
   });
-  if (entry?.sourceId) await removeEntry("MANUAL", entry.sourceId);
+  if (entry?.sourceId) {
+    await removeEntry("MANUAL", entry.sourceId);
+    await audit(business.id, "DELETE", "JOURNAL", entry.sourceId, `Deleted manual journal "${entry.memo}"`);
+  }
   revalidateAll();
 }
 

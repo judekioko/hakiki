@@ -3,11 +3,12 @@ import { prisma } from "./prisma";
 import { AMOUNT_TOLERANCE, num, round2 } from "./money";
 import { nameSimilarity, normaliseAlias } from "./matching";
 import { postReceipt } from "./ledger";
+import { settledAmount } from "./sales";
 
 export async function openSalesInvoices(businessId: string) {
   const invoices = await prisma.salesInvoice.findMany({
     where: { businessId, status: "SENT" },
-    include: { allocations: { select: { amount: true } }, customer: { select: { id: true, name: true, aliases: true } } },
+    include: { allocations: { select: { amount: true } }, creditAllocations: { select: { amount: true } }, customer: { select: { id: true, name: true, aliases: true } } },
     orderBy: { issueDate: "asc" },
   });
   return invoices
@@ -18,7 +19,7 @@ export async function openSalesInvoices(businessId: string) {
       dueDate: inv.dueDate,
       total: num(inv.total),
       customer: inv.customer,
-      open: round2(num(inv.total) - inv.allocations.reduce((s, a) => s + num(a.amount), 0)),
+      open: round2(num(inv.total) - settledAmount(inv)),
     }))
     .filter((inv) => inv.open > 0.01);
 }

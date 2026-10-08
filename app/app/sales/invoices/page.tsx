@@ -27,7 +27,7 @@ export default async function SalesInvoicesPage({ searchParams }: { searchParams
 
   const invoices = await prisma.salesInvoice.findMany({
     where: { businessId: business.id },
-    include: { customer: { select: { name: true } }, allocations: { select: { amount: true } } },
+    include: { customer: { select: { name: true } }, allocations: { select: { amount: true } }, creditAllocations: { select: { amount: true } } },
     orderBy: [{ issueDate: "desc" }, { number: "desc" }],
   });
   const rows = invoices.map((inv) => ({ inv, state: invoiceState(inv) }));

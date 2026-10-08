@@ -11,12 +11,20 @@ export const INVOICE_DISPLAY = {
   UNPAID: { label: "Unpaid", tone: "amber" },
 } as const;
 
+type Amounts = { amount: unknown }[];
+
+// Money received plus credit notes applied: everything that has reduced what the customer owes on an invoice.
+export function settledAmount(invoice: { allocations: Amounts; creditAllocations?: Amounts }) {
+  const sum = (rows: Amounts = []) => rows.reduce((s, a) => s + num(a.amount as never), 0);
+  return round2(sum(invoice.allocations) + sum(invoice.creditAllocations));
+}
+
 export function invoiceState(
-  invoice: { status: string; total: unknown; dueDate: Date; allocations: { amount: unknown }[] },
+  invoice: { status: string; total: unknown; dueDate: Date; allocations: Amounts; creditAllocations?: Amounts },
   today = new Date()
 ) {
   const total = num(invoice.total as never);
-  const paid = round2(invoice.allocations.reduce((s, a) => s + num(a.amount as never), 0));
+  const paid = settledAmount(invoice);
   const balance = round2(total - paid);
   let status: InvoiceDisplayStatus;
   if (invoice.status === "DRAFT") status = "DRAFT";

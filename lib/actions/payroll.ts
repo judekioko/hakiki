@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
+import { audit } from "@/lib/audit";
 import { requireBusiness } from "@/lib/business";
 import { countryPack } from "@/lib/countries";
 import { num, round2 } from "@/lib/money";
@@ -231,6 +232,7 @@ export async function approvePayRun(formData: FormData) {
   if (!run || run.status !== "DRAFT") return;
   await prisma.payRun.update({ where: { id: run.id }, data: { status: "APPROVED" } });
   await postPayRun(run.id);
+  await audit(business.id, "APPROVE", "PAY_RUN", run.id, "Approved pay run");
   revalidateAll();
 }
 
@@ -240,6 +242,7 @@ export async function reopenPayRun(formData: FormData) {
   if (!run || run.status !== "APPROVED") return;
   await prisma.payRun.update({ where: { id: run.id }, data: { status: "DRAFT" } });
   await postPayRun(run.id);
+  await audit(business.id, "REOPEN", "PAY_RUN", run.id, "Reopened an approved pay run");
   revalidateAll();
 }
 

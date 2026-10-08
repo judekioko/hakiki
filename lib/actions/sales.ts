@@ -6,6 +6,8 @@ import { prisma } from "@/lib/prisma";
 import { requireBusiness } from "@/lib/business";
 import { num, round2 } from "@/lib/money";
 import { normaliseAlias } from "@/lib/matching";
+import { audit } from "@/lib/audit";
+import { settledAmount } from "@/lib/sales";
 import { accountIdsByKey, postReceipt, postSalesInvoice } from "@/lib/ledger";
 import { runReceiptAutoMatch } from "@/lib/receipt-match";
 import { nextDocumentNumber, priceLines, totals } from "@/lib/document-lines";
@@ -116,11 +118,11 @@ export async function saveSalesInvoice(_prev: ActionState, formData: FormData): 
   if (invoiceId) {
     const existing = await prisma.salesInvoice.findFirst({
       where: { id: invoiceId, businessId: business.id },
-      include: { allocations: { select: { amount: true } } },
+      include: { allocations: { select: { amount: true } }, creditAllocations: { select: { amount: true } } },
     });
     if (!existing) return { error: "Invoice not found" };
     if (existing.status === "VOID") return { error: "A void invoice cannot be edited" };
-    const paid = existing.allocations.reduce((s, a) => s + num(a.amount), 0);
+    const paid = settledAmount(existing);
     if (paid > sums.total + 0.01) return { error: "The new total is less than what the customer has already paid" };
     await prisma.$transaction([
       prisma.salesInvoiceLine.deleteMany({ where: { invoiceId } }),
@@ -145,6 +147,13 @@ export async function saveSalesInvoice(_prev: ActionState, formData: FormData): 
 
   await postSalesInvoice(id);
   await runReceiptAutoMatch(business.id);
+  await audit(
+    business.id,
+    invoiceId ? "UPDATE" : "CREATE",
+    "SALES_INVOICE",
+    id,
+    `${invoiceId ? "Edited" : "Created"} invoice (${send ? "sent" : "draft"}) total ${sums.total.toFixed(2)}`
+  );
   revalidateAll();
   redirect(`/app/sales/invoices/${id}`);
 }
@@ -163,6 +172,7 @@ export async function markInvoiceSent(formData: FormData) {
   await prisma.salesInvoice.update({ where: { id: invoice.id }, data: { status: "SENT" } });
   await postSalesInvoice(invoice.id);
   await runReceiptAutoMatch(business.id);
+  await audit(business.id, "SEND", "SALES_INVOICE", invoice.id, `Marked invoice ${invoice.number} as sent`);
   revalidateAll();
 }
 
@@ -173,9 +183,11 @@ export async function voidInvoice(formData: FormData) {
   // Payments applied to the invoice go back to being unapplied money from the customer.
   const receiptIds = invoice.allocations.map((a) => a.receiptId);
   await prisma.receiptAllocation.deleteMany({ where: { invoiceId: invoice.id } });
+  await prisma.creditAllocation.deleteMany({ where: { invoiceId: invoice.id } });
   await prisma.salesInvoice.update({ where: { id: invoice.id }, data: { status: "VOID" } });
   await postSalesInvoice(invoice.id);
   for (const id of receiptIds) await postReceipt(id);
+  await audit(business.id, "VOID", "SALES_INVOICE", invoice.id, `Voided invoice ${invoice.number}`);
   revalidateAll();
 }
 
@@ -185,6 +197,7 @@ export async function deleteDraftInvoice(formData: FormData) {
   if (!invoice || invoice.status !== "DRAFT") return;
   await prisma.salesInvoice.delete({ where: { id: invoice.id } });
   await postSalesInvoice(invoice.id);
+  await audit(business.id, "DELETE", "SALES_INVOICE", invoice.id, `Deleted draft invoice ${invoice.number}`);
   revalidateAll();
   redirect("/app/sales/invoices");
 }
@@ -227,7 +240,7 @@ export async function recordReceipt(_prev: ActionState, formData: FormData): Pro
   const invoice = invoiceId
     ? await prisma.salesInvoice.findFirst({
         where: { id: invoiceId, businessId: business.id, status: "SENT" },
-        include: { allocations: { select: { amount: true } } },
+        include: { allocations: { select: { amount: true } }, creditAllocations: { select: { amount: true } } },
       })
     : null;
   let customerId = String(formData.get("customerId") ?? "") || invoice?.customerId || null;
@@ -249,13 +262,20 @@ export async function recordReceipt(_prev: ActionState, formData: FormData): Pro
     },
   });
   if (invoice) {
-    const open = round2(num(invoice.total) - invoice.allocations.reduce((s, a) => s + num(a.amount), 0));
+    const open = round2(num(invoice.total) - settledAmount(invoice));
     const amount = Math.min(open, data.amount);
     if (amount > 0) {
       await prisma.receiptAllocation.create({ data: { receiptId: receipt.id, invoiceId: invoice.id, amount } });
     }
   }
   await postReceipt(receipt.id);
+  await audit(
+    business.id,
+    "CREATE",
+    "RECEIPT",
+    receipt.id,
+    `Recorded ${data.amount.toFixed(2)} received from ${data.payer}${invoice ? ` for invoice ${invoice.number}` : ""}`
+  );
   revalidateAll();
   redirect(invoice ? `/app/sales/invoices/${invoice.id}` : `/app/sales/receipts/${receipt.id}`);
 }
@@ -269,13 +289,13 @@ export async function applyReceiptToInvoice(formData: FormData) {
     }),
     prisma.salesInvoice.findFirst({
       where: { id: String(formData.get("invoiceId")), businessId: business.id, status: "SENT" },
-      include: { allocations: true },
+      include: { allocations: true, creditAllocations: true },
     }),
   ]);
   if (!receipt || !invoice || receipt.allocations.some((a) => a.invoiceId === invoice.id)) return;
 
   const receiptOpen = num(receipt.amount) - receipt.allocations.reduce((s, a) => s + num(a.amount), 0);
-  const invoiceOpen = num(invoice.total) - invoice.allocations.reduce((s, a) => s + num(a.amount), 0);
+  const invoiceOpen = num(invoice.total) - settledAmount(invoice);
   const amount = round2(Math.min(receiptOpen, invoiceOpen));
   if (amount <= 0) return;
 
@@ -341,7 +361,10 @@ export async function deleteReceipt(formData: FormData) {
   const { business } = await requireBusiness();
   const receiptId = String(formData.get("receiptId"));
   const deleted = await prisma.receipt.deleteMany({ where: { id: receiptId, businessId: business.id } });
-  if (deleted.count) await postReceipt(receiptId);
+  if (deleted.count) {
+    await postReceipt(receiptId);
+    await audit(business.id, "DELETE", "RECEIPT", receiptId, "Deleted a money-received record");
+  }
   revalidateAll();
   redirect("/app/sales/receipts");
 }

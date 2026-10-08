@@ -21,7 +21,7 @@ export default async function CustomerPage({ params }: { params: Promise<{ id: s
   const customer = await prisma.customer.findFirst({
     where: { id, businessId: business.id },
     include: {
-      salesInvoices: { include: { allocations: { select: { amount: true } } }, orderBy: { issueDate: "desc" } },
+      salesInvoices: { include: { allocations: { select: { amount: true } }, creditAllocations: { select: { amount: true } } }, orderBy: { issueDate: "desc" } },
       receipts: { orderBy: { receivedAt: "desc" }, take: 20 },
     },
   });

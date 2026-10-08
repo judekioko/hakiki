@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
+import { audit } from "@/lib/audit";
 import { requireBusiness } from "@/lib/business";
 import { parseStatement } from "@/lib/statement-import";
 import { normaliseAlias } from "@/lib/matching";
@@ -175,6 +176,7 @@ export async function createPayment(_prev: ActionState, formData: FormData): Pro
   });
   await postPayment(payment.id);
   await runAutoMatch(business.id);
+  await audit(business.id, "CREATE", "PAYMENT", payment.id, `Recorded ${data.amount.toFixed(2)} paid to ${data.counterparty}`);
   revalidateAll();
   redirect(`/app/payments/${payment.id}`);
 }
@@ -245,7 +247,10 @@ export async function deletePayment(formData: FormData) {
   const { business } = await requireBusiness();
   const paymentId = String(formData.get("paymentId"));
   const deleted = await prisma.payment.deleteMany({ where: { id: paymentId, businessId: business.id } });
-  if (deleted.count) await postPayment(paymentId);
+  if (deleted.count) {
+    await postPayment(paymentId);
+    await audit(business.id, "DELETE", "PAYMENT", paymentId, "Deleted a money-paid-out record");
+  }
   revalidateAll();
   redirect("/app/payments");
 }

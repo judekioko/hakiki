@@ -67,10 +67,11 @@ export function totals(lines: PricedLine[]) {
 }
 
 export async function nextDocumentNumber(businessId: string, prefix: string) {
-  const latest = await prisma.salesInvoice.findMany({
-    where: { businessId, number: { startsWith: prefix } },
-    select: { number: true },
-  });
+  const where = { businessId, number: { startsWith: prefix } };
+  const latest =
+    prefix === "CN-"
+      ? await prisma.creditNote.findMany({ where, select: { number: true } })
+      : await prisma.salesInvoice.findMany({ where, select: { number: true } });
   const max = latest.reduce((m, r) => Math.max(m, Number(r.number.slice(prefix.length)) || 0), 0);
   return `${prefix}${String(max + 1).padStart(4, "0")}`;
 }

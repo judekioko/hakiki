@@ -32,6 +32,7 @@ export default async function SalesInvoicePage({ params }: { params: Promise<{ i
       customer: true,
       lines: { orderBy: { position: "asc" } },
       allocations: { include: { receipt: true } },
+      creditAllocations: { include: { creditNote: true } },
     },
   });
   if (!invoice) notFound();
@@ -63,6 +64,11 @@ export default async function SalesInvoicePage({ params }: { params: Promise<{ i
               <input type="hidden" name="invoiceId" value={invoice.id} />
               <SubmitButton>Mark as sent</SubmitButton>
             </form>
+          ) : null}
+          {invoice.status === "SENT" ? (
+            <LinkButton href={`/app/sales/credit-notes/new?invoice=${invoice.id}`} variant="secondary">
+              Issue credit note
+            </LinkButton>
           ) : null}
           <PrintButton />
         </div>
@@ -149,7 +155,7 @@ export default async function SalesInvoicePage({ params }: { params: Promise<{ i
             {state.paid > 0 ? (
               <>
                 <div className="flex justify-between text-slate-600">
-                  <dt>Paid</dt>
+                  <dt>{invoice.creditAllocations.length > 0 ? "Paid & credited" : "Paid"}</dt>
                   <dd>-{fmt(state.paid)}</dd>
                 </div>
                 <div className="flex justify-between font-semibold">
@@ -207,6 +213,26 @@ export default async function SalesInvoicePage({ params }: { params: Promise<{ i
                           </SubmitButton>
                         </form>
                       </span>
+                    </li>
+                  ))}
+                </ul>
+              </CardBody>
+            </Card>
+          ) : null}
+
+          {invoice.creditAllocations.length > 0 ? (
+            <Card>
+              <CardHeader>
+                <CardTitle>Credit notes</CardTitle>
+              </CardHeader>
+              <CardBody>
+                <ul className="divide-y divide-slate-100 text-sm">
+                  {invoice.creditAllocations.map((a) => (
+                    <li key={a.id} className="flex items-center justify-between gap-2 py-2">
+                      <Link href={`/app/sales/credit-notes/${a.creditNoteId}`} className="hover:underline">
+                        {a.creditNote.number}
+                      </Link>
+                      <span>-{fmt(num(a.amount))}</span>
                     </li>
                   ))}
                 </ul>

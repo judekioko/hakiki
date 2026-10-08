@@ -12,6 +12,7 @@ const navSections: { title: string | null; items: NavItem[] }[] = [
     title: "Sales",
     items: [
       { href: "/app/sales/invoices", label: "Invoices" },
+      { href: "/app/sales/credit-notes", label: "Credit notes" },
       { href: "/app/sales/receipts", label: "Money received" },
       { href: "/app/sales/customers", label: "Customers" },
     ],
@@ -39,6 +40,7 @@ const navSections: { title: string | null; items: NavItem[] }[] = [
       { href: "/app/reports", label: "Reports" },
       { href: "/app/accounts", label: "Chart of accounts" },
       { href: "/app/journal", label: "Journal" },
+      { href: "/app/audit", label: "Audit trail" },
       { href: "/app/payments/import", label: "Import statement" },
     ],
   },

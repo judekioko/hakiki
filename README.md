@@ -12,6 +12,10 @@ place, in the business's own currency.
   (`lib/ledger.ts`). Chart of accounts, account ledgers, manual journals.
 - **Sales:** customers, tax invoices (draft / sent / void), printable invoices, money received. Receipts are matched to
   invoices automatically by amount, customer and invoice number.
+- **Credit notes:** reverse a sale (and its tax) in full or in part, optionally returning stock. A credit note issued
+  against an invoice is applied to it automatically; unused credit can be applied to another invoice of the same customer.
+- **Audit trail:** every create, edit, void, delete and approval is logged with who did it and when (`lib/audit.ts`,
+  `/app/audit`). Entries are append-only.
 - **Purchases:** supplier bills (single total or line items), money paid out, suppliers, and the supplier tax-invoice
   check (eTIMS, EFRIS, EBM...) with WhatsApp requests for missing invoices.
 - **Statement import:** bank and mobile money CSVs. Money out becomes payments, money in becomes receipts. Columns are

@@ -3,6 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
+import { audit } from "@/lib/audit";
 import { requireBusiness } from "@/lib/business";
 import { findOrCreateSupplier } from "@/lib/suppliers";
 import { runAutoMatch } from "@/lib/auto-match";
@@ -120,6 +121,7 @@ export async function setInvoiceStatus(formData: FormData) {
     where: { id: invoiceId, businessId: business.id },
     data: { status: status as "UNVERIFIED" | "VERIFIED" | "REJECTED" },
   });
+  await audit(business.id, "UPDATE", "BILL", invoiceId, `Marked bill as ${status.toLowerCase()}`);
   // A rejected invoice cannot back an expense, so release its payments.
   if (status === "REJECTED") {
     const released = await prisma.allocation.findMany({ where: { invoiceId, invoice: { businessId: business.id } } });
@@ -135,6 +137,7 @@ export async function deleteInvoice(formData: FormData) {
   const affected = await prisma.allocation.findMany({ where: { invoiceId, invoice: { businessId: business.id } } });
   const deleted = await prisma.invoice.deleteMany({ where: { id: invoiceId, businessId: business.id } });
   if (deleted.count) {
+    await audit(business.id, "DELETE", "BILL", invoiceId, "Deleted a supplier bill");
     await postBill(invoiceId);
     for (const a of affected) await postPayment(a.paymentId);
   }

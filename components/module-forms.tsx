@@ -4,6 +4,7 @@ import { useState } from "react";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { createCustomer, recordReceipt, saveSalesInvoice, updateCustomer } from "@/lib/actions/sales";
+import { saveCreditNote } from "@/lib/actions/credit-notes";
 import { adjustStock, createItem, updateItem } from "@/lib/actions/items";
 import {
   createEmployee,
@@ -149,6 +150,94 @@ export function SalesInvoiceForm({
         ) : null}
         <SubmitButton pending={pending} name="intent" value="send">
           {status === "SENT" ? "Save changes" : "Save & mark as sent"}
+        </SubmitButton>
+      </div>
+    </form>
+  );
+}
+
+export function CreditNoteForm({
+  creditNoteId,
+  customers,
+  invoices,
+  items,
+  taxRates,
+  accounts,
+  chargeTax,
+  currency,
+  defaults,
+}: {
+  creditNoteId?: string;
+  customers: Option[];
+  invoices: { id: string; number: string; customerId: string }[];
+  items: EditorItem[];
+  taxRates: EditorTaxRate[];
+  accounts: AccountOption[];
+  chargeTax: boolean;
+  currency: string;
+  defaults: {
+    customerId?: string;
+    invoiceId?: string;
+    issueDate: string;
+    reason?: string | null;
+    restock?: boolean;
+    lines?: Omit<EditorLine, "key">[];
+  };
+}) {
+  const { state, onSubmit, pending } = useFormAction(saveCreditNote);
+  const [customerId, setCustomerId] = useState(defaults.customerId ?? "");
+  const customerInvoices = invoices.filter((i) => i.customerId === customerId);
+  return (
+    <form onSubmit={onSubmit} className="space-y-5">
+      <Feedback state={state} />
+      <input type="hidden" name="creditNoteId" value={creditNoteId ?? ""} />
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <Field label="Customer" htmlFor="customerId">
+          <Select id="customerId" name="customerId" value={customerId} onChange={(e) => setCustomerId(e.target.value)} required>
+            <option value="">Choose a customer</option>
+            {customers.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </Select>
+        </Field>
+        <Field label="Against invoice (optional)" htmlFor="invoiceId">
+          <Select id="invoiceId" name="invoiceId" defaultValue={defaults.invoiceId ?? ""} key={customerId}>
+            <option value="">Not linked to an invoice</option>
+            {customerInvoices.map((i) => (
+              <option key={i.id} value={i.id}>
+                {i.number}
+              </option>
+            ))}
+          </Select>
+        </Field>
+        <Field label="Credit note date" htmlFor="issueDate">
+          <Input id="issueDate" name="issueDate" type="date" defaultValue={defaults.issueDate} required />
+        </Field>
+        <Field label="Reason" htmlFor="reason">
+          <Input id="reason" name="reason" defaultValue={defaults.reason ?? ""} placeholder="Returned goods, price correction..." />
+        </Field>
+      </div>
+      <LineItemsEditor
+        side="sale"
+        items={items}
+        taxRates={taxRates}
+        accounts={accounts}
+        chargeTax={chargeTax}
+        initial={defaults.lines}
+        currency={currency}
+      />
+      <label className="flex items-center gap-2 text-sm text-slate-700">
+        <input type="checkbox" name="restock" defaultChecked={defaults.restock} className="h-4 w-4 rounded border-slate-300" />
+        Put returned stock items back into stock
+      </label>
+      <div className="flex flex-wrap gap-2">
+        <SubmitButton pending={pending} name="intent" value="draft" variant="secondary">
+          Save as draft
+        </SubmitButton>
+        <SubmitButton pending={pending} name="intent" value="issue">
+          Save & issue
         </SubmitButton>
       </div>
     </form>

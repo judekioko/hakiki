@@ -146,6 +146,13 @@ export const salesInvoiceSchema = z.object({
   notes: optionalText,
 });
 
+export const creditNoteSchema = z.object({
+  customerId: z.string().min(1, "Choose a customer"),
+  invoiceId: optionalText,
+  issueDate: isoDate,
+  reason: optionalText,
+});
+
 export const receiptSchema = z.object({
   receivedAt: isoDate,
   amount: money,

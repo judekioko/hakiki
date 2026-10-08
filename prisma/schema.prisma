@@ -75,6 +75,13 @@ enum JournalSource {
   PAYRUN
   MANUAL
   STOCK_ADJUSTMENT
+  CREDIT_NOTE
+}
+
+enum CreditNoteStatus {
+  DRAFT
+  ISSUED
+  VOID
 }
 
 enum PayrollParty {
@@ -135,6 +142,8 @@ model Business {
   payrollRules          PayrollRule[]
   incomeTaxBands        IncomeTaxBand[]
   payRuns               PayRun[]
+  creditNotes           CreditNote[]
+  auditLogs             AuditLog[]
 }
 
 model Membership {
@@ -242,6 +251,7 @@ model Customer {
   business      Business       @relation(fields: [businessId], references: [id], onDelete: Cascade)
   salesInvoices SalesInvoice[]
   receipts      Receipt[]
+  creditNotes   CreditNote[]
 
   @@index([businessId])
 }
@@ -266,6 +276,7 @@ model Item {
   business         Business           @relation(fields: [businessId], references: [id], onDelete: Cascade)
   movements        StockMovement[]
   salesLines       SalesInvoiceLine[]
+  creditLines      CreditNoteLine[]
   billLines        BillLine[]
 
   @@index([businessId])
@@ -293,25 +304,26 @@ model StockMovement {
 // ---------- Sales ----------
 
 model SalesInvoice {
-  id               String              @id @default(cuid())
-  businessId       String
-  customerId       String
-  number           String
-  issueDate        DateTime            @db.Date
-  dueDate          DateTime            @db.Date
-  status           SalesInvoiceStatus  @default(DRAFT)
-  reference        String?
-  notes            String?
+  id                String              @id @default(cuid())
+  businessId        String
+  customerId        String
+  number            String
+  issueDate         DateTime            @db.Date
+  dueDate           DateTime            @db.Date
+  status            SalesInvoiceStatus  @default(DRAFT)
+  reference         String?
+  notes             String?
   // Number from the national e-invoicing system (eTIMS, EFRIS, EBM...) once the invoice is registered there.
-  taxInvoiceNumber String?
-  subtotal         Decimal             @default(0) @db.Decimal(14, 2)
-  taxTotal         Decimal             @default(0) @db.Decimal(14, 2)
-  total            Decimal             @default(0) @db.Decimal(14, 2)
-  createdAt        DateTime            @default(now())
-  business         Business            @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  customer         Customer            @relation(fields: [customerId], references: [id], onDelete: Cascade)
-  lines            SalesInvoiceLine[]
-  allocations      ReceiptAllocation[]
+  taxInvoiceNumber  String?
+  subtotal          Decimal             @default(0) @db.Decimal(14, 2)
+  taxTotal          Decimal             @default(0) @db.Decimal(14, 2)
+  total             Decimal             @default(0) @db.Decimal(14, 2)
+  createdAt         DateTime            @default(now())
+  business          Business            @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  customer          Customer            @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  lines             SalesInvoiceLine[]
+  allocations       ReceiptAllocation[]
+  creditAllocations CreditAllocation[]
 
   @@unique([businessId, number])
   @@index([businessId, issueDate])
@@ -561,4 +573,83 @@ model Payslip {
   employee              Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
 
   @@unique([payRunId, employeeId])
+}
+
+// ---------- Credit notes ----------
+
+// A reduction of what a customer owes: returned goods, a price correction, a discount given after invoicing.
+// Posts the reverse of a sales invoice (debit sales and tax, credit receivables).
+model CreditNote {
+  id          String             @id @default(cuid())
+  businessId  String
+  customerId  String
+  // The invoice being corrected, when there is one. The credit is applied to it automatically.
+  invoiceId   String?
+  number      String
+  issueDate   DateTime           @db.Date
+  status      CreditNoteStatus   @default(DRAFT)
+  reason      String?
+  // Put returned stock items back into stock at their current average cost.
+  restock     Boolean            @default(false)
+  subtotal    Decimal            @default(0) @db.Decimal(14, 2)
+  taxTotal    Decimal            @default(0) @db.Decimal(14, 2)
+  total       Decimal            @default(0) @db.Decimal(14, 2)
+  createdAt   DateTime           @default(now())
+  business    Business           @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  customer    Customer           @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  lines       CreditNoteLine[]
+  allocations CreditAllocation[]
+
+  @@unique([businessId, number])
+  @@index([businessId, issueDate])
+}
+
+model CreditNoteLine {
+  id           String     @id @default(cuid())
+  creditNoteId String
+  itemId       String?
+  description  String
+  quantity     Decimal    @db.Decimal(14, 3)
+  unitPrice    Decimal    @db.Decimal(14, 2)
+  taxRate      Decimal    @default(0) @db.Decimal(6, 3)
+  taxRateId    String?
+  accountId    String
+  lineTotal    Decimal    @db.Decimal(14, 2)
+  taxAmount    Decimal    @db.Decimal(14, 2)
+  position     Int        @default(0)
+  creditNote   CreditNote @relation(fields: [creditNoteId], references: [id], onDelete: Cascade)
+  item         Item?      @relation(fields: [itemId], references: [id], onDelete: SetNull)
+}
+
+// Part of a credit note used up against an invoice. Moves no money, so it does not touch the ledger.
+model CreditAllocation {
+  id           String       @id @default(cuid())
+  creditNoteId String
+  invoiceId    String
+  amount       Decimal      @db.Decimal(14, 2)
+  createdAt    DateTime     @default(now())
+  creditNote   CreditNote   @relation(fields: [creditNoteId], references: [id], onDelete: Cascade)
+  invoice      SalesInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+
+  @@unique([creditNoteId, invoiceId])
+}
+
+// ---------- Audit trail ----------
+
+// Append-only record of who changed what. Rows are never updated or deleted by the app.
+model AuditLog {
+  id         String   @id @default(cuid())
+  businessId String
+  userId     String?
+  // Copied at the time so the trail still reads correctly if the user is later removed.
+  userName   String
+  action     String
+  entityType String
+  entityId   String?
+  summary    String
+  createdAt  DateTime @default(now())
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@index([businessId, createdAt])
+  @@index([businessId, entityType, entityId])
 }

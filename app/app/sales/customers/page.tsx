@@ -17,7 +17,7 @@ export default async function CustomersPage() {
   const customers = await prisma.customer.findMany({
     where: { businessId: business.id },
     orderBy: { name: "asc" },
-    include: { salesInvoices: { include: { allocations: { select: { amount: true } } } } },
+    include: { salesInvoices: { include: { allocations: { select: { amount: true } }, creditAllocations: { select: { amount: true } } } } },
   });
   const rows = customers.map((c) => {
     const states = c.salesInvoices.map((i) => invoiceState(i)).filter((s) => s.status !== "DRAFT" && s.status !== "VOID");
