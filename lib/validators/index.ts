@@ -181,6 +181,14 @@ export const purchaseOrderSchema = z.object({
   notes: optionalText,
 });
 
+export const supplierCreditSchema = z.object({
+  supplierId: z.string().min(1, "Choose a supplier"),
+  billId: optionalText,
+  number: z.string().trim().min(1, "Enter the supplier's credit note number"),
+  creditDate: isoDate,
+  reason: optionalText,
+});
+
 export const receiptSchema = z.object({
   receivedAt: isoDate,
   amount: money,

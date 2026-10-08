@@ -323,3 +323,63 @@ export async function postCreditNote(creditNoteId: string) {
     lines,
   });
 }
+
+export async function postSupplierCredit(creditId: string) {
+  const credit = await prisma.supplierCredit.findUnique({
+    where: { id: creditId },
+    include: {
+      lines: { include: { item: true } },
+      supplier: { select: { name: true } },
+      business: { select: { vatRegistered: true } },
+    },
+  });
+  await prisma.stockMovement.deleteMany({ where: { sourceType: "SUPPLIER_CREDIT", sourceId: creditId } });
+  if (!credit || credit.status !== "ISSUED") return removeEntry("SUPPLIER_CREDIT", creditId);
+
+  const keys = await accountIdsByKey(credit.businessId);
+  const claimVat = credit.business.vatRegistered;
+  const total = num(credit.total);
+  // The exact reverse of a bill: owe the supplier less, take back the cost and the input tax claimed.
+  const lines: Line[] = [{ accountId: keys.AP, debit: total }];
+  let vatTotal = 0;
+  for (const line of credit.lines) {
+    const net = num(line.lineTotal);
+    const tax = num(line.taxAmount);
+    // Non-VAT-registered businesses never claimed the input tax, so it comes back out of the cost.
+    const cost = claimVat ? net : round2(net + tax);
+    const backOutOfStock = credit.returnStock && line.item?.kind === "INVENTORY" && !!line.itemId;
+    lines.push({ accountId: backOutOfStock ? keys.INVENTORY : line.accountId, credit: cost });
+    if (claimVat) vatTotal += tax;
+    if (backOutOfStock && line.itemId) {
+      const qty = num(line.quantity);
+      await prisma.stockMovement.create({
+        data: {
+          businessId: credit.businessId,
+          itemId: line.itemId,
+          date: credit.creditDate,
+          quantity: -qty,
+          unitCost: qty > 0 ? cost / qty : 0,
+          sourceType: "SUPPLIER_CREDIT",
+          sourceId: credit.id,
+          note: `Supplier credit ${credit.number}`,
+        },
+      });
+    }
+  }
+  lines.push({ accountId: keys.VAT_IN, credit: round2(vatTotal) });
+  // Absorb rounding differences between the stated total and the line sum.
+  const credits = round2(lines.reduce((s, l) => s + (l.credit ?? 0), 0));
+  if (Math.abs(credits - total) > 0 && Math.abs(credits - total) <= 1) {
+    lines.push(
+      credits > total
+        ? { accountId: keys.UNCATEGORISED_EXPENSE, debit: round2(credits - total) }
+        : { accountId: keys.UNCATEGORISED_EXPENSE, credit: round2(total - credits) }
+    );
+  }
+
+  await replaceEntry(credit.businessId, "SUPPLIER_CREDIT", credit.id, {
+    date: credit.creditDate,
+    memo: `Supplier credit ${credit.number} from ${credit.supplier.name}`,
+    lines,
+  });
+}

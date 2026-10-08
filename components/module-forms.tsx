@@ -8,6 +8,7 @@ import { saveCreditNote } from "@/lib/actions/credit-notes";
 import { saveQuotation } from "@/lib/actions/quotations";
 import { saveRecurring } from "@/lib/actions/recurring";
 import { savePurchaseOrder } from "@/lib/actions/purchase-orders";
+import { saveSupplierCredit } from "@/lib/actions/supplier-credits";
 import { adjustStock, createItem, updateItem } from "@/lib/actions/items";
 import {
   createEmployee,
@@ -498,6 +499,96 @@ export function PurchaseOrderForm({
         ) : null}
         <SubmitButton pending={pending} name="intent" value="order">
           {!status || status === "DRAFT" ? "Save & place order" : "Save changes"}
+        </SubmitButton>
+      </div>
+    </form>
+  );
+}
+
+export function SupplierCreditForm({
+  creditId,
+  suppliers,
+  bills,
+  items,
+  taxRates,
+  accounts,
+  currency,
+  defaults,
+}: {
+  creditId?: string;
+  suppliers: Option[];
+  bills: { id: string; number: string; supplierId: string }[];
+  items: EditorItem[];
+  taxRates: EditorTaxRate[];
+  accounts: AccountOption[];
+  currency: string;
+  defaults: {
+    supplierId?: string;
+    billId?: string;
+    number?: string;
+    creditDate: string;
+    reason?: string | null;
+    returnStock?: boolean;
+    lines?: Omit<EditorLine, "key">[];
+  };
+}) {
+  const { state, onSubmit, pending } = useFormAction(saveSupplierCredit);
+  const [supplierId, setSupplierId] = useState(defaults.supplierId ?? "");
+  const supplierBills = bills.filter((b) => b.supplierId === supplierId);
+  return (
+    <form onSubmit={onSubmit} className="space-y-5">
+      <Feedback state={state} />
+      <input type="hidden" name="creditId" value={creditId ?? ""} />
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <Field label="Supplier" htmlFor="supplierId">
+          <Select id="supplierId" name="supplierId" value={supplierId} onChange={(e) => setSupplierId(e.target.value)} required>
+            <option value="">Choose a supplier</option>
+            {suppliers.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.name}
+              </option>
+            ))}
+          </Select>
+        </Field>
+        <Field label="Against bill (optional)" htmlFor="billId">
+          <Select id="billId" name="billId" defaultValue={defaults.billId ?? ""} key={supplierId}>
+            <option value="">Not linked to a bill</option>
+            {supplierBills.map((b) => (
+              <option key={b.id} value={b.id}>
+                {b.number}
+              </option>
+            ))}
+          </Select>
+        </Field>
+        <Field label="Supplier's credit note no." htmlFor="number">
+          <Input id="number" name="number" defaultValue={defaults.number ?? ""} className="uppercase" required />
+        </Field>
+        <Field label="Credit note date" htmlFor="creditDate">
+          <Input id="creditDate" name="creditDate" type="date" defaultValue={defaults.creditDate} required />
+        </Field>
+      </div>
+      <Field label="Reason (optional)" htmlFor="reason">
+        <Input id="reason" name="reason" defaultValue={defaults.reason ?? ""} placeholder="Goods returned, overcharge, discount..." />
+      </Field>
+      <LineItemsEditor
+        side="purchase"
+        items={items}
+        taxRates={taxRates}
+        accounts={accounts}
+        chargeTax
+        initial={defaults.lines}
+        currency={currency}
+      />
+      <label className="flex items-center gap-2 text-sm text-slate-700">
+        <input type="checkbox" name="returnStock" defaultChecked={defaults.returnStock} className="h-4 w-4 rounded border-slate-300" />
+        Take returned stock items out of stock (leave unticked for a price adjustment)
+      </label>
+      <div className="flex flex-wrap gap-2">
+        <SubmitButton pending={pending} name="intent" value="draft" variant="secondary">
+          Save as draft
+        </SubmitButton>
+        <SubmitButton pending={pending} name="intent" value="issue">
+          Save & record
         </SubmitButton>
       </div>
     </form>

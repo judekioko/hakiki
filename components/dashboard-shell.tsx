@@ -24,6 +24,7 @@ const navSections: { title: string | null; items: NavItem[] }[] = [
     items: [
       { href: "/app/purchase-orders", label: "Purchase orders" },
       { href: "/app/invoices", label: "Bills" },
+      { href: "/app/supplier-credits", label: "Supplier credit notes" },
       { href: "/app/payments", label: "Money paid out" },
       { href: "/app/suppliers", label: "Suppliers" },
       { href: "/app/expense-check", label: "Tax invoice check" },

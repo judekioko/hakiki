@@ -19,14 +19,17 @@ export async function linkPaymentToInvoice(formData: FormData) {
 
   const [payment, invoice] = await Promise.all([
     prisma.payment.findFirst({ where: { id: paymentId, businessId: business.id }, include: { allocations: true } }),
-    prisma.invoice.findFirst({ where: { id: invoiceId, businessId: business.id }, include: { allocations: true } }),
+    prisma.invoice.findFirst({ where: { id: invoiceId, businessId: business.id }, include: { allocations: true, creditAllocations: true } }),
   ]);
   if (!payment || !invoice) throw new Error("Payment or invoice not found");
   if (payment.allocations.some((a) => a.invoiceId === invoice.id)) return;
   await assertDocumentOpen(business, "payment", payment.id);
 
   const paymentOpen = num(payment.amount) - payment.allocations.reduce((s, a) => s + num(a.amount), 0);
-  const invoiceOpen = num(invoice.totalAmount) - invoice.allocations.reduce((s, a) => s + num(a.amount), 0);
+  const invoiceOpen =
+    num(invoice.totalAmount) -
+    invoice.allocations.reduce((s, a) => s + num(a.amount), 0) -
+    invoice.creditAllocations.reduce((s, a) => s + num(a.amount), 0);
   const amount = round2(Math.min(paymentOpen, invoiceOpen));
   if (amount <= 0) throw new Error("Nothing left to allocate on this payment or invoice");
 

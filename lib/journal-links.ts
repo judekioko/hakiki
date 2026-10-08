@@ -14,6 +14,8 @@ export function sourceHref(sourceType: JournalSource, sourceId: string | null): 
       return `/app/payments/${sourceId}`;
     case "PAYRUN":
       return `/app/payroll/${sourceId}`;
+    case "SUPPLIER_CREDIT":
+      return `/app/supplier-credits/${sourceId}`;
     case "CREDIT_NOTE":
       return `/app/sales/credit-notes/${sourceId}`;
     default:
@@ -30,4 +32,5 @@ export const SOURCE_LABEL: Record<JournalSource, string> = {
   MANUAL: "Journal",
   STOCK_ADJUSTMENT: "Stock",
   CREDIT_NOTE: "Credit note",
+  SUPPLIER_CREDIT: "Supplier credit",
 };

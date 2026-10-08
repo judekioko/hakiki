@@ -160,11 +160,12 @@ export async function agedReceivables(businessId: string, today = new Date()) {
 export async function agedPayables(businessId: string, today = new Date()) {
   const bills = await prisma.invoice.findMany({
     where: { businessId },
-    include: { allocations: { select: { amount: true } } },
+    include: { allocations: { select: { amount: true } }, creditAllocations: { select: { amount: true } } },
   });
   const rows = new Map<string, AgingRow>();
   for (const bill of bills) {
-    const open = round2(num(bill.totalAmount) - bill.allocations.reduce((s, a) => s + num(a.amount), 0));
+    const credited = bill.creditAllocations.reduce((s, a) => s + num(a.amount), 0);
+    const open = round2(num(bill.totalAmount) - bill.allocations.reduce((s, a) => s + num(a.amount), 0) - credited);
     if (open <= 0.01) continue;
     const due = bill.dueDate ?? bill.invoiceDate;
     addToAging(rows, bill.supplierId ?? `name:${bill.supplierName}`, bill.supplierName, bucketFor(due, today), open);

@@ -31,7 +31,11 @@ export async function openPayments(businessId: string): Promise<MatchPayment[]> 
 export async function openInvoices(businessId: string): Promise<MatchInvoice[]> {
   const invoices = await prisma.invoice.findMany({
     where: { businessId, status: { not: "REJECTED" } },
-    include: { allocations: { select: { amount: true } }, supplier: { select: { aliases: true } } },
+    include: {
+      allocations: { select: { amount: true } },
+      creditAllocations: { select: { amount: true } },
+      supplier: { select: { aliases: true } },
+    },
   });
   return invoices
     .map((i) => ({
@@ -40,7 +44,11 @@ export async function openInvoices(businessId: string): Promise<MatchInvoice[]> 
       supplierName: i.supplierName,
       supplierId: i.supplierId,
       supplierAliases: i.supplier?.aliases ?? [],
-      remaining: round2(num(i.totalAmount) - i.allocations.reduce((s, a) => s + num(a.amount), 0)),
+      remaining: round2(
+        num(i.totalAmount) -
+          i.allocations.reduce((s, a) => s + num(a.amount), 0) -
+          i.creditAllocations.reduce((s, a) => s + num(a.amount), 0)
+      ),
     }))
     .filter((i) => i.remaining > 0);
 }

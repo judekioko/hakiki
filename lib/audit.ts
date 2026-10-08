@@ -17,6 +17,7 @@ export const AUDIT_ENTITIES: Record<string, string> = {
   RECONCILIATION: "Reconciliation",
   QUOTATION: "Quotation",
   PURCHASE_ORDER: "Purchase order",
+  SUPPLIER_CREDIT: "Supplier credit note",
   GOODS_RECEIPT: "Goods received",
   RECURRING: "Recurring invoice",
 };

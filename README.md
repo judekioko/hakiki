@@ -32,6 +32,9 @@ place, in the business's own currency.
   and raise the supplier bill from the order with quantities prefilled from what arrived and has not been billed.
   Ordered, received and billed are tracked per line. Orders and deliveries post nothing; stock and the payable are
   booked when the bill is recorded.
+- **Supplier credit notes:** record a credit from a supplier (goods returned, overcharge, discount), optionally taking
+  returned stock out of inventory. It reverses the bill's cost and input tax, is applied to the bill it corrects, and
+  reduces the bill's balance in payables ageing and payment matching.
 - **Purchases:** supplier bills (single total or line items), money paid out, suppliers, and the supplier tax-invoice
   check (eTIMS, EFRIS, EBM...) with WhatsApp requests for missing invoices.
 - **Statement import:** bank and mobile money CSVs. Money out becomes payments, money in becomes receipts. Columns are

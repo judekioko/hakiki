@@ -37,12 +37,14 @@ export default async function InvoiceDetailPage({ params }: { params: Promise<{ 
       dueDate: true,
       lines: { orderBy: { position: "asc" } },
       allocations: { include: { payment: true } },
+      creditAllocations: { include: { credit: true } },
     },
   });
   if (!invoice) notFound();
 
   const total = num(invoice.totalAmount);
   const matched = round2(invoice.allocations.reduce((s, a) => s + num(a.amount), 0));
+  const credited = round2(invoice.creditAllocations.reduce((s, a) => s + num(a.amount), 0));
   const fileUrl = `/app/invoices/${invoice.id}/file`;
 
   return (
@@ -69,6 +71,12 @@ export default async function InvoiceDetailPage({ params }: { params: Promise<{ 
                 <p className="text-xs text-slate-500">Matched to payments</p>
                 <p className="text-lg font-semibold text-teal-700">{fmt(matched)}</p>
               </div>
+              {credited > 0 ? (
+                <div>
+                  <p className="text-xs text-slate-500">Credited by supplier</p>
+                  <p className="text-lg font-semibold text-teal-700">{fmt(credited)}</p>
+                </div>
+              ) : null}
               <div className="text-sm sm:col-span-3">
                 <p>
                   <span className="text-slate-400">Supplier {taxIdLabel}: </span>
@@ -168,6 +176,26 @@ export default async function InvoiceDetailPage({ params }: { params: Promise<{ 
             </CardBody>
           </Card>
 
+          {invoice.creditAllocations.length > 0 ? (
+            <Card>
+              <CardHeader>
+                <CardTitle>Supplier credit notes</CardTitle>
+              </CardHeader>
+              <CardBody>
+                <ul className="divide-y divide-slate-100 text-sm">
+                  {invoice.creditAllocations.map((a) => (
+                    <li key={a.id} className="flex items-center justify-between gap-3 py-2">
+                      <Link href={`/app/supplier-credits/${a.creditId}`} className="hover:underline">
+                        {a.credit.number} · {formatDate(a.credit.creditDate)}
+                      </Link>
+                      <span>-{fmt(num(a.amount))}</span>
+                    </li>
+                  ))}
+                </ul>
+              </CardBody>
+            </Card>
+          ) : null}
+
           {invoice.fileName ? (
             <Card>
               <CardHeader className="flex items-center justify-between">
@@ -189,6 +217,12 @@ export default async function InvoiceDetailPage({ params }: { params: Promise<{ 
         </div>
 
         <div className="space-y-6">
+          <Link
+            href={`/app/supplier-credits/new?bill=${invoice.id}`}
+            className="block rounded-md border border-slate-300 bg-white px-3 py-2 text-center text-sm font-medium text-slate-700 hover:bg-slate-50"
+          >
+            Record a supplier credit note
+          </Link>
           <Card>
             <CardHeader>
               <CardTitle>Check it is genuine</CardTitle>

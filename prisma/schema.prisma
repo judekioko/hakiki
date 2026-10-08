@@ -76,6 +76,7 @@ enum JournalSource {
   MANUAL
   STOCK_ADJUSTMENT
   CREDIT_NOTE
+  SUPPLIER_CREDIT
 }
 
 enum CreditNoteStatus {
@@ -183,6 +184,7 @@ model Business {
   recurringInvoices     RecurringInvoice[]
   purchaseOrders        PurchaseOrder[]
   goodsReceipts         GoodsReceipt[]
+  supplierCredits       SupplierCredit[]
 }
 
 model Membership {
@@ -266,19 +268,20 @@ model TaxRate {
 // ---------- Contacts ----------
 
 model Supplier {
-  id             String          @id @default(cuid())
+  id             String           @id @default(cuid())
   businessId     String
   name           String
   kraPin         String?
   phone          String?
   email          String?
   // Other spellings seen on M-Pesa/bank statements, e.g. "JOHN SUPPLIES LTD", used for matching.
-  aliases        String[]        @default([])
-  createdAt      DateTime        @default(now())
-  business       Business        @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  aliases        String[]         @default([])
+  createdAt      DateTime         @default(now())
+  business       Business         @relation(fields: [businessId], references: [id], onDelete: Cascade)
   invoices       Invoice[]
   payments       Payment[]
   purchaseOrders PurchaseOrder[]
+  credits        SupplierCredit[]
 
   @@index([businessId])
 }
@@ -307,28 +310,29 @@ model Customer {
 // ---------- Products & stock ----------
 
 model Item {
-  id                 String                 @id @default(cuid())
-  businessId         String
-  name               String
-  sku                String?
-  kind               ItemKind               @default(SERVICE)
-  unit               String?
-  salePrice          Decimal                @default(0) @db.Decimal(14, 2)
-  purchasePrice      Decimal                @default(0) @db.Decimal(14, 2)
-  taxRateId          String?
-  incomeAccountId    String?
-  expenseAccountId   String?
-  reorderLevel       Decimal?               @db.Decimal(14, 3)
-  isArchived         Boolean                @default(false)
-  createdAt          DateTime               @default(now())
-  business           Business               @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  movements          StockMovement[]
-  salesLines         SalesInvoiceLine[]
-  creditLines        CreditNoteLine[]
-  quotationLines     QuotationLine[]
-  purchaseOrderLines PurchaseOrderLine[]
-  recurringLines     RecurringInvoiceLine[]
-  billLines          BillLine[]
+  id                  String                 @id @default(cuid())
+  businessId          String
+  name                String
+  sku                 String?
+  kind                ItemKind               @default(SERVICE)
+  unit                String?
+  salePrice           Decimal                @default(0) @db.Decimal(14, 2)
+  purchasePrice       Decimal                @default(0) @db.Decimal(14, 2)
+  taxRateId           String?
+  incomeAccountId     String?
+  expenseAccountId    String?
+  reorderLevel        Decimal?               @db.Decimal(14, 3)
+  isArchived          Boolean                @default(false)
+  createdAt           DateTime               @default(now())
+  business            Business               @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  movements           StockMovement[]
+  salesLines          SalesInvoiceLine[]
+  creditLines         CreditNoteLine[]
+  quotationLines      QuotationLine[]
+  purchaseOrderLines  PurchaseOrderLine[]
+  supplierCreditLines SupplierCreditLine[]
+  recurringLines      RecurringInvoiceLine[]
+  billLines           BillLine[]
 
   @@index([businessId])
 }
@@ -442,32 +446,34 @@ model ReceiptAllocation {
 
 // A supplier bill / tax invoice received. Named Invoice from the expense-checker version of the app.
 model Invoice {
-  id                String         @id @default(cuid())
+  id                String                     @id @default(cuid())
   businessId        String
   supplierId        String?
   // Tax invoice number as printed by the supplier's e-invoicing device (eTIMS CU number in Kenya).
   invoiceNumber     String
   supplierName      String
   supplierPin       String?
-  invoiceDate       DateTime       @db.Date
-  dueDate           DateTime?      @db.Date
-  totalAmount       Decimal        @db.Decimal(14, 2)
-  vatAmount         Decimal        @default(0) @db.Decimal(14, 2)
+  invoiceDate       DateTime                   @db.Date
+  dueDate           DateTime?                  @db.Date
+  totalAmount       Decimal                    @db.Decimal(14, 2)
+  vatAmount         Decimal                    @default(0) @db.Decimal(14, 2)
   description       String?
   // Expense account used when the bill has no lines.
   categoryAccountId String?
-  status            InvoiceStatus  @default(UNVERIFIED)
+  status            InvoiceStatus              @default(UNVERIFIED)
   fileName          String?
   fileType          String?
   fileData          Bytes?
-  createdAt         DateTime       @default(now())
-  business          Business       @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  supplier          Supplier?      @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  createdAt         DateTime                   @default(now())
+  business          Business                   @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  supplier          Supplier?                  @relation(fields: [supplierId], references: [id], onDelete: SetNull)
   allocations       Allocation[]
   lines             BillLine[]
   // The purchase order this bill was raised from.
   purchaseOrderId   String?
-  purchaseOrder     PurchaseOrder? @relation(fields: [purchaseOrderId], references: [id], onDelete: SetNull)
+  purchaseOrder     PurchaseOrder?             @relation(fields: [purchaseOrderId], references: [id], onDelete: SetNull)
+  supplierCredits   SupplierCredit[]
+  creditAllocations SupplierCreditAllocation[]
 
   @@unique([businessId, invoiceNumber])
   @@index([businessId, invoiceDate])
@@ -896,4 +902,65 @@ model GoodsReceiptLine {
   quantity    Decimal           @db.Decimal(14, 3)
   receipt     GoodsReceipt      @relation(fields: [receiptId], references: [id], onDelete: Cascade)
   orderLine   PurchaseOrderLine @relation(fields: [orderLineId], references: [id], onDelete: Cascade)
+}
+
+// ---------- Supplier credit notes ----------
+
+// A credit from a supplier: goods returned, an overcharge corrected, a discount given after billing.
+// Posts the reverse of a bill (debit payables, credit the cost and the input tax).
+model SupplierCredit {
+  id          String                     @id @default(cuid())
+  businessId  String
+  supplierId  String
+  // The bill being corrected, when there is one. The credit is applied to it automatically.
+  billId      String?
+  // The supplier's own credit note number.
+  number      String
+  creditDate  DateTime                   @db.Date
+  status      CreditNoteStatus           @default(DRAFT)
+  reason      String?
+  // Take returned stock items out of stock (otherwise the credit is a price adjustment).
+  returnStock Boolean                    @default(false)
+  subtotal    Decimal                    @default(0) @db.Decimal(14, 2)
+  taxTotal    Decimal                    @default(0) @db.Decimal(14, 2)
+  total       Decimal                    @default(0) @db.Decimal(14, 2)
+  createdAt   DateTime                   @default(now())
+  business    Business                   @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  supplier    Supplier                   @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  bill        Invoice?                   @relation(fields: [billId], references: [id], onDelete: SetNull)
+  lines       SupplierCreditLine[]
+  allocations SupplierCreditAllocation[]
+
+  @@unique([businessId, number])
+  @@index([businessId, creditDate])
+}
+
+model SupplierCreditLine {
+  id          String         @id @default(cuid())
+  creditId    String
+  itemId      String?
+  description String
+  quantity    Decimal        @db.Decimal(14, 3)
+  unitPrice   Decimal        @db.Decimal(14, 2)
+  taxRate     Decimal        @default(0) @db.Decimal(6, 3)
+  taxRateId   String?
+  accountId   String
+  lineTotal   Decimal        @db.Decimal(14, 2)
+  taxAmount   Decimal        @db.Decimal(14, 2)
+  position    Int            @default(0)
+  credit      SupplierCredit @relation(fields: [creditId], references: [id], onDelete: Cascade)
+  item        Item?          @relation(fields: [itemId], references: [id], onDelete: SetNull)
+}
+
+// Part of a supplier credit used up against a bill. Moves no money, so it does not touch the ledger.
+model SupplierCreditAllocation {
+  id        String         @id @default(cuid())
+  creditId  String
+  billId    String
+  amount    Decimal        @db.Decimal(14, 2)
+  createdAt DateTime       @default(now())
+  credit    SupplierCredit @relation(fields: [creditId], references: [id], onDelete: Cascade)
+  bill      Invoice        @relation(fields: [billId], references: [id], onDelete: Cascade)
+
+  @@unique([creditId, billId])
 }
