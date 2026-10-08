@@ -32,7 +32,7 @@ export default async function ImportPage() {
         </Card>
       )}
       <p className="text-xs text-slate-500">
-        Suggested order: customers and suppliers, then products and opening stock, then the unpaid invoices and bills. Nothing is saved until you
+        Suggested order: customers and suppliers, products and opening stock, account balances (your old trial balance), then the unpaid invoices and bills. Nothing is saved until you
         have seen the preview and clicked Import.
       </p>
     </div>

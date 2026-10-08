@@ -56,8 +56,8 @@ place, in the business's own currency.
   the books hold the converted amounts, and each document keeps its own rate. Money received and paid is recorded in the
   business currency, and any leftover difference is cleared as an exchange gain or loss with one click. Not covered:
   foreign-currency bank accounts and period-end revaluation of open balances.
-- **CSV import:** bring customers, suppliers, products (with opening stock), and the unpaid customer invoices and
-  supplier bills over from a spreadsheet (Accounting → Import from CSV). Each type has a downloadable template; column
+- **CSV import:** bring customers, suppliers, products (with opening stock), your old trial balance (account balances,
+  as Balance or Debit/Credit columns), and the unpaid customer invoices and supplier bills over from a spreadsheet (Accounting → Import from CSV). Each type has a downloadable template; column
   headings are matched by name, a preview shows what will happen to every row (new, already there, or a problem), and
   re-importing the same file never duplicates anything.
 - **Purchases:** supplier bills (single total or line items), money paid out, suppliers, and the supplier tax-invoice

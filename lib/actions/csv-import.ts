@@ -12,6 +12,8 @@ export type ImportState = {
     kind: ImportKind;
     csv: string;
     stockDate: string;
+    asAt: string;
+    notes: string[];
     rows: PreviewRow[];
     total: number;
     summary: { new: number; duplicate: number; error: number };
@@ -32,18 +34,19 @@ export async function runCsvImport(_prev: ImportState, formData: FormData): Prom
   const csv = String(formData.get("csv") ?? "");
   if (!csv.trim()) return { error: "Choose a CSV file first" };
   const stockDate = String(formData.get("stockDate") ?? "");
+  const asAt = String(formData.get("asAt") ?? "");
 
-  const analysis = await analyseImport(business, kind, csv, { stockDate });
+  const analysis = await analyseImport(business, kind, csv, { stockDate, asAt });
   if (analysis.fatal) return { error: analysis.fatal };
 
   if (formData.get("intent") !== "import") {
     return {
-      preview: { kind, csv, stockDate, rows: analysis.rows.slice(0, SHOWN_ROWS), total: analysis.rows.length, summary: analysis.summary },
+      preview: { kind, csv, stockDate, asAt, notes: analysis.notes, rows: analysis.rows.slice(0, SHOWN_ROWS), total: analysis.rows.length, summary: analysis.summary },
     };
   }
 
   if (analysis.summary.new === 0) return { error: "There is nothing new to import in this file." };
-  const outcome = await commitImport(business, kind, analysis, { stockDate });
+  const outcome = await commitImport(business, kind, analysis, { stockDate, asAt });
   await audit(
     business.id,
     "IMPORT",
@@ -52,5 +55,6 @@ export async function runCsvImport(_prev: ImportState, formData: FormData): Prom
     `Imported ${outcome.created} ${IMPORTS[kind].label.toLowerCase()} from a CSV file (${analysis.summary.duplicate} skipped as already present, ${analysis.summary.error + outcome.failed.length} not imported)`
   );
   revalidatePath("/app", "layout");
+  if (outcome.created === 0 && outcome.failed.length > 0) return { error: outcome.failed[0].message };
   return { done: { kind, created: outcome.created, skipped: analysis.summary.duplicate + analysis.summary.error, failed: outcome.failed } };
 }

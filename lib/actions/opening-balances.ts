@@ -10,12 +10,11 @@ import { formatDate } from "@/lib/format";
 import { round2 } from "@/lib/money";
 import { normaliseAlias } from "@/lib/matching";
 import { findOrCreateSupplier } from "@/lib/suppliers";
-import { accountIdsByKey, postBill, postSalesInvoice, replaceEntry } from "@/lib/ledger";
+import { postBill, postSalesInvoice } from "@/lib/ledger";
 import { runAutoMatch } from "@/lib/auto-match";
 import { runReceiptAutoMatch } from "@/lib/receipt-match";
-import { lockMessage, reconciledMessage } from "@/lib/period-lock";
-import { OPENING_EXCLUDED_KEYS, debitNatured } from "@/lib/opening-balances";
 import { createOpeningBill, createOpeningInvoice } from "@/lib/opening-items";
+import { saveOpeningAccounts } from "@/lib/opening-entry";
 import { firstError, parseJsonField } from "@/lib/validators";
 import type { ActionState } from "./types";
 
@@ -33,71 +32,22 @@ function parseDay(value: FormDataEntryValue | null) {
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
-// One journal entry holds every opening account balance, with whatever is needed to make it balance booked to
-// opening balance equity. Saving replaces the whole entry, so the form always shows exactly what is in the books.
+// Saving replaces the whole opening entry, so the form always shows exactly what is in the books.
 export async function saveOpeningBalances(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const { business } = await requireBusiness();
   if (business.role === "STAFF") return { error: "Only an owner or accountant can enter opening balances" };
 
   const date = parseDay(formData.get("openingDate"));
   if (!date) return { error: "Choose the date the balances are as at" };
-  if (date.getTime() > Date.now()) return { error: "The opening balance date cannot be in the future" };
-  const dateLock = lockMessage(business, date);
-  if (dateLock) return { error: dateLock };
-  const reconciled = await reconciledMessage("OPENING_BALANCE", business.id);
-  if (reconciled) return { error: reconciled };
-
   const input = parseJsonField(formData.get("balances"), balancesSchema);
   if (input.error) return { error: input.error };
-  const entered = input.data!.filter((b) => Math.abs(b.amount) >= 0.005);
 
-  const keys = await accountIdsByKey(business.id);
-  const excluded = new Set(OPENING_EXCLUDED_KEYS.map((k) => keys[k]));
-  const accounts = await prisma.account.findMany({
-    where: { businessId: business.id, id: { in: entered.map((e) => e.accountId) } },
-    select: { id: true, name: true, type: true },
-  });
-  const byId = new Map(accounts.map((a) => [a.id, a]));
-
-  const lines: { accountId: string; debit?: number; credit?: number; description?: string }[] = [];
-  let debits = 0;
-  let credits = 0;
-  for (const e of entered) {
-    const account = byId.get(e.accountId);
-    if (!account || excluded.has(account.id)) return { error: "One of the accounts cannot take an opening balance here" };
-    // Amounts are entered on each account's normal side; a negative amount is the opposite side.
-    const debit = debitNatured(account.type) ? e.amount > 0 : e.amount < 0;
-    const amount = round2(Math.abs(e.amount));
-    lines.push(debit ? { accountId: account.id, debit: amount } : { accountId: account.id, credit: amount });
-    if (debit) debits = round2(debits + amount);
-    else credits = round2(credits + amount);
-  }
-  // Customer and supplier balances, stock and all the rest are booked separately, but they all sit against the same
-  // opening balance equity account, so the figure here only plugs the accounts entered on this form.
-  const plug = round2(debits - credits);
-  if (plug !== 0) {
-    lines.push({
-      accountId: keys.OPENING_BALANCE,
-      ...(plug > 0 ? { credit: plug } : { debit: -plug }),
-      description: "Opening balance equity (balancing figure)",
-    });
-  }
-
-  await replaceEntry(business.id, "OPENING_BALANCE", business.id, {
-    date,
-    memo: `Opening balances as at ${formatDate(date)}`,
-    lines,
-  });
-  await prisma.business.update({ where: { id: business.id }, data: { openingDate: date } });
-  await audit(
-    business.id,
-    "UPDATE",
-    "OPENING_BALANCES",
-    business.id,
-    `Saved opening balances as at ${formatDate(date)} (${entered.length} account${entered.length === 1 ? "" : "s"})`
-  );
+  const result = await saveOpeningAccounts(business, date, input.data!);
+  if ("error" in result) return { error: result.error };
+  const count = `${result.count} account${result.count === 1 ? "" : "s"}`;
+  await audit(business.id, "UPDATE", "OPENING_BALANCES", business.id, `Saved opening balances as at ${formatDate(date)} (${count})`);
   revalidateAll();
-  return { success: `Saved opening balances for ${entered.length} account${entered.length === 1 ? "" : "s"} as at ${formatDate(date)}` };
+  return { success: `Saved opening balances for ${count} as at ${formatDate(date)}` };
 }
 
 const openingItemSchema = z.object({

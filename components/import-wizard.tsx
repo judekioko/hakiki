@@ -22,6 +22,7 @@ export function ImportWizard({ options, today, defaultStockDate }: { options: Im
   const [csv, setCsv] = useState("");
   const [fileName, setFileName] = useState("");
   const [stockDate, setStockDate] = useState(defaultStockDate);
+  const [asAt, setAsAt] = useState(defaultStockDate);
   const option = options.find((o) => o.kind === kind)!;
 
   const submit = (intent: "preview" | "import", text = csv) => {
@@ -29,6 +30,7 @@ export function ImportWizard({ options, today, defaultStockDate }: { options: Im
     data.set("kind", kind);
     data.set("csv", text);
     data.set("stockDate", stockDate);
+    data.set("asAt", asAt);
     data.set("intent", intent);
     startTransition(() => dispatch(data));
   };
@@ -136,6 +138,16 @@ export function ImportWizard({ options, today, defaultStockDate }: { options: Im
         </div>
       </section>
 
+      {kind === "account-balances" ? (
+        <section className="space-y-1">
+          <label htmlFor="asAt" className="text-sm font-semibold text-slate-700">
+            Balances are as at (the last day of your old books)
+          </label>
+          <Input id="asAt" type="date" value={asAt} max={today} onChange={(e) => setAsAt(e.target.value)} className="max-w-xs" />
+          <p className="text-xs text-slate-500">Change the date here before you choose the file. It also sets the opening balance date for unpaid invoices and bills.</p>
+        </section>
+      ) : null}
+
       {kind === "items" ? (
         <section className="space-y-1">
           <label htmlFor="stockDate" className="text-sm font-semibold text-slate-700">
@@ -163,6 +175,13 @@ export function ImportWizard({ options, today, defaultStockDate }: { options: Im
             {preview.summary.duplicate > 0 ? <Badge tone="slate">{preview.summary.duplicate} already there (skipped)</Badge> : null}
             {preview.summary.error > 0 ? <Badge tone="rose">{preview.summary.error} with problems (skipped)</Badge> : null}
           </div>
+          {preview.notes.length > 0 ? (
+            <ul className="space-y-1 rounded-md bg-slate-50 p-3 text-xs text-slate-600">
+              {preview.notes.map((n) => (
+                <li key={n}>{n}</li>
+              ))}
+            </ul>
+          ) : null}
           <div className="max-h-96 overflow-auto rounded-lg border border-slate-200 bg-white">
             <table className="w-full text-sm">
               <thead className="sticky top-0 bg-slate-50">
@@ -182,7 +201,7 @@ export function ImportWizard({ options, today, defaultStockDate }: { options: Im
                     </td>
                     <td className="px-3 py-1.5">
                       {r.status === "new" ? (
-                        <span className="text-teal-700">Will be added</span>
+                        <span className="text-teal-700">{kind === "account-balances" ? "Will be set" : "Will be added"}</span>
                       ) : r.status === "duplicate" ? (
                         <span className="text-slate-500">{r.message}</span>
                       ) : (

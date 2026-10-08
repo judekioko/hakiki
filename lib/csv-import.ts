@@ -10,13 +10,15 @@ import { createOpeningBill, createOpeningInvoice } from "./opening-items";
 import { runReceiptAutoMatch } from "./receipt-match";
 import { runAutoMatch } from "./auto-match";
 import { formatDate } from "./format";
+import { debitNatured } from "./opening-balances";
+import { openingEntryBlocked, savedOpeningAmounts, saveOpeningAccounts } from "./opening-entry";
 
 // Bringing a business onto Hakiki from a spreadsheet: customers, suppliers, products and opening stock, and the
 // unpaid invoices and bills that were open on the day the old books end. Each type has a template, a preview that
 // shows what will happen to every row, and an import that only does what the preview showed.
 
-export type ImportKind = "customers" | "suppliers" | "items" | "customer-balances" | "supplier-balances";
-export const IMPORT_KINDS: ImportKind[] = ["customers", "suppliers", "items", "customer-balances", "supplier-balances"];
+export type ImportKind = "account-balances" | "customers" | "suppliers" | "items" | "customer-balances" | "supplier-balances";
+export const IMPORT_KINDS: ImportKind[] = ["customers", "suppliers", "items", "account-balances", "customer-balances", "supplier-balances"];
 
 export const MAX_ROWS = 5000;
 export const MAX_CHARS = 1_500_000;
@@ -24,6 +26,23 @@ export const MAX_CHARS = 1_500_000;
 type Column = { key: string; label: string; aliases: string[]; required?: boolean; hint: string };
 
 export const IMPORTS: Record<ImportKind, { label: string; description: string; columns: Column[]; example: string[][] }> = {
+  "account-balances": {
+    label: "Account balances (bank, loans, capital...)",
+    description:
+      "Your old trial balance or balance sheet: one row per account, as at the day your old books end. Either fill Balance, or Debit and Credit as in a trial balance. Accounts you leave out keep whatever is already saved. Customers, suppliers and stock are imported separately.",
+    columns: [
+      { key: "account", label: "Account", aliases: ["accountname", "accountcode", "code", "name", "ledger", "ledgeraccount", "accountno"], required: true, hint: "The account's code (like 1010) or name, exactly as in your chart of accounts" },
+      { key: "balance", label: "Balance", aliases: ["amount", "closingbalance", "openingbalance"], hint: "On the account's normal side: assets and expenses as a debit, everything else as a credit. A minus sign is the other side (owner's drawings, for example, are a debit, so enter them with a minus)" },
+      { key: "debit", label: "Debit", aliases: ["dr", "debits", "debitbalance"], hint: "Instead of Balance, as in a trial balance" },
+      { key: "credit", label: "Credit", aliases: ["cr", "credits", "creditbalance"], hint: "Instead of Balance, as in a trial balance" },
+    ],
+    example: [
+      ["1010", "250000", "", ""],
+      ["M-Pesa", "48200.50", "", ""],
+      ["2300", "", "", "120000"],
+      ["Owner's capital", "100000", "", ""],
+    ],
+  },
   customers: {
     label: "Customers",
     description: "Everyone you invoice. Customers already in Hakiki (same name) are skipped.",
@@ -152,10 +171,13 @@ type Payload =
       quantity: number;
       unitCost: number;
     }
+  | { kind: "account-balances"; accountId: string; amount: number }
   | ({ kind: "customer-balances" } & Balance)
   | ({ kind: "supplier-balances" } & Balance);
 
 export type Analysis = {
+  // Things worth knowing before importing, such as how an opening entry will balance.
+  notes: string[];
   rows: PreviewRow[];
   payloads: (Payload | null)[];
   summary: { new: number; duplicate: number; error: number };
@@ -165,8 +187,8 @@ export type Analysis = {
 
 type Business = { id: string; country: string; currency: string; openingDate: Date | null; lockedThrough: Date | null };
 
-export async function analyseImport(business: Business, kind: ImportKind, text: string, options: { stockDate?: string } = {}): Promise<Analysis> {
-  const empty = (fatal: string): Analysis => ({ rows: [], payloads: [], summary: { new: 0, duplicate: 0, error: 0 }, fatal });
+export async function analyseImport(business: Business, kind: ImportKind, text: string, options: { stockDate?: string; asAt?: string } = {}): Promise<Analysis> {
+  const empty = (fatal: string): Analysis => ({ notes: [], rows: [], payloads: [], summary: { new: 0, duplicate: 0, error: 0 }, fatal });
   if (text.length > MAX_CHARS) return empty("The file is too large. Split it into smaller files of a few thousand rows each.");
   const table = parseCsv(text).filter((r) => r.some((c) => c.trim() !== ""));
   if (table.length < 2) return empty("The file has no data rows. It needs a header row followed by at least one row.");
@@ -185,6 +207,9 @@ export async function analyseImport(business: Business, kind: ImportKind, text: 
     return empty(`The first row must be a header row. Missing column${missing.length === 1 ? "" : "s"}: ${missing.join(", ")}. Download the template to see the layout.`);
   }
   const cell = (row: string[], key: string) => (index[key] === undefined ? "" : (row[index[key]] ?? "").trim());
+  if (kind === "account-balances" && index.balance === undefined && index.debit === undefined && index.credit === undefined) {
+    return empty("Add a Balance column, or Debit and Credit columns like a trial balance. Download the template to see the layout.");
+  }
 
   const rows: PreviewRow[] = [];
   const payloads: (Payload | null)[] = [];
@@ -352,6 +377,101 @@ export async function analyseImport(business: Business, kind: ImportKind, text: 
     }
   }
 
+  const notes: string[] = [];
+  if (kind === "account-balances") {
+    const asAt = options.asAt && /^\d{4}-\d{2}-\d{2}$/.test(options.asAt) ? new Date(`${options.asAt}T00:00:00Z`) : null;
+    if (!asAt) return empty("Choose the date the balances are as at.");
+    const blocked = await openingEntryBlocked(business, asAt);
+    if (blocked) return empty(blocked);
+
+    const [accounts, keys, saved] = await Promise.all([
+      prisma.account.findMany({ where: { businessId: business.id, isArchived: false } }),
+      accountIdsByKey(business.id),
+      savedOpeningAmounts(business.id),
+    ]);
+    const where: Record<string, string> = {
+      [keys.AR]: "Money owed by customers goes in through Customers who owe you, one invoice at a time",
+      [keys.AP]: "Money owed to suppliers goes in through Suppliers you owe, one bill at a time",
+      [keys.INVENTORY]: "Stock goes in through Products & services with a Quantity and cost",
+      [keys.OPENING_BALANCE]: "Opening balance equity is worked out for you as the balancing figure",
+    };
+    const byCode = new Map(accounts.map((a) => [a.code.toLowerCase(), a]));
+    const byName = new Map<string, typeof accounts>();
+    for (const a of accounts) byName.set(nameKey(a.name), [...(byName.get(nameKey(a.name)) ?? []), a]);
+    const seen = new Set<string>();
+    const merged = new Map(saved);
+    const typeOf = new Map(accounts.map((a) => [a.id, a.type]));
+
+    for (const { row, line } of dataRows) {
+      const text = cell(row, "account");
+      if (!text) {
+        push(line, "(blank)", "", "error", null, "The account is missing");
+        continue;
+      }
+      // "1010", "Bank account", or "1010 Bank account" / "1010 - Bank account".
+      const lead = text.match(/^(\d{3,6})\b/)?.[1];
+      const matches = byCode.has(text.toLowerCase())
+        ? [byCode.get(text.toLowerCase())!]
+        : (byName.get(nameKey(text)) ?? (lead && byCode.has(lead) ? [byCode.get(lead)!] : []));
+      if (matches.length !== 1) {
+        push(line, text, "", "error", null, matches.length === 0 ? "No account with that code or name. Add it under Chart of accounts first" : "More than one account has that name. Use the account code instead");
+        continue;
+      }
+      const account = matches[0];
+      if (where[account.id]) {
+        push(line, `${account.code} · ${account.name}`, "", "error", null, where[account.id]);
+        continue;
+      }
+      if (seen.has(account.id)) {
+        push(line, `${account.code} · ${account.name}`, "", "error", null, "This account is listed more than once");
+        continue;
+      }
+      seen.add(account.id);
+
+      let amount: number;
+      if (cell(row, "balance")) {
+        const v = parseAmount(cell(row, "balance"));
+        if (v === null) {
+          push(line, `${account.code} · ${account.name}`, cell(row, "balance"), "error", null, "The balance is not a valid amount");
+          continue;
+        }
+        amount = v;
+      } else {
+        const d = cell(row, "debit") ? parseAmount(cell(row, "debit")) : 0;
+        const c = cell(row, "credit") ? parseAmount(cell(row, "credit")) : 0;
+        if (d === null || c === null) {
+          push(line, `${account.code} · ${account.name}`, "", "error", null, "The debit or credit is not a valid amount");
+          continue;
+        }
+        amount = debitNatured(account.type) ? d - c : c - d;
+      }
+      amount = round2(amount);
+      if (Math.abs(amount) < 0.005) {
+        push(line, `${account.code} · ${account.name}`, "", "duplicate", null, "Zero balance, nothing to enter");
+        continue;
+      }
+      merged.set(account.id, amount);
+      const sideDebit = debitNatured(account.type) ? amount > 0 : amount < 0;
+      push(line, `${account.code} · ${account.name}`, `${Math.abs(amount).toFixed(2)} ${sideDebit ? "debit" : "credit"}`, "new", { kind: "account-balances", accountId: account.id, amount });
+    }
+
+    // How the whole opening entry will balance once these figures are in.
+    let debits = 0;
+    let credits = 0;
+    for (const [accountId, amount] of merged) {
+      const debit = debitNatured(typeOf.get(accountId) ?? "ASSET") ? amount > 0 : amount < 0;
+      if (debit) debits += Math.abs(amount);
+      else credits += Math.abs(amount);
+    }
+    const plug = round2(debits - credits);
+    notes.push(
+      plug === 0
+        ? "Debits and credits agree, so nothing is needed to balance the entry."
+        : `${Math.abs(plug).toFixed(2)} will be booked to Opening balance equity as the balancing ${plug > 0 ? "credit" : "debit"}. That is your starting equity once customers, suppliers and stock are in.`
+    );
+    if (saved.size > 0) notes.push(`Balances already saved for ${saved.size} account${saved.size === 1 ? "" : "s"} are kept unless this file lists the same account, which replaces it.`);
+  }
+
   if (kind === "customer-balances" || kind === "supplier-balances") {
     if (!business.openingDate) {
       return empty("Set the opening balance date first (Accounting → Opening balances, step 1), then come back to import the unpaid invoices.");
@@ -405,18 +525,30 @@ export async function analyseImport(business: Business, kind: ImportKind, text: 
 
   const summary = { new: 0, duplicate: 0, error: 0 };
   for (const r of rows) summary[r.status]++;
-  return { rows, payloads, summary, fatal: null };
+  return { notes, rows, payloads, summary, fatal: null };
 }
 
 export type ImportOutcome = { created: number; failed: { line: number; message: string }[] };
 
-export async function commitImport(business: Business, kind: ImportKind, analysis: Analysis, options: { stockDate?: string } = {}): Promise<ImportOutcome> {
+export async function commitImport(business: Business, kind: ImportKind, analysis: Analysis, options: { stockDate?: string; asAt?: string } = {}): Promise<ImportOutcome> {
   const failed: ImportOutcome["failed"] = [];
   let created = 0;
   const lineOf = (i: number) => analysis.rows[i].line;
   const todo = analysis.payloads.map((p, i) => ({ p, i })).filter((x): x is { p: Payload; i: number } => x.p !== null);
 
-  if (kind === "customers") {
+  if (kind === "account-balances") {
+    // Saving replaces the whole opening entry, so what was already saved is carried over and the file overlays it.
+    const saved = await savedOpeningAmounts(business.id);
+    for (const { p } of todo) {
+      const row = p as Extract<Payload, { kind: "account-balances" }>;
+      saved.set(row.accountId, row.amount);
+    }
+    const asAt = options.asAt ? new Date(`${options.asAt}T00:00:00Z`) : null;
+    if (!asAt) return { created: 0, failed: [{ line: 0, message: "Choose the date the balances are as at" }] };
+    const result = await saveOpeningAccounts(business, asAt, [...saved].map(([accountId, amount]) => ({ accountId, amount })));
+    if ("error" in result) failed.push({ line: 0, message: result.error });
+    else created = todo.length;
+  } else if (kind === "customers") {
     const data = todo.map(({ p }) => p as Extract<Payload, { kind: "customers" }>).map((p) => ({
       businessId: business.id,
       name: p.name,

@@ -81,7 +81,11 @@ export default async function OpeningBalancesPage() {
         <CardBody className="space-y-3">
           <p className="text-sm text-slate-600">
             Take these from your last trial balance or balance sheet: bank, mobile money and cash, loans, capital and anything else you
-            hold. Customers, suppliers and stock are entered in the next steps, not here.
+            hold. Customers, suppliers and stock are entered in the next steps, not here. Have an old trial balance in a spreadsheet?{" "}
+            <Link href="/app/import" className="text-teal-700 underline">
+              Import it from CSV
+            </Link>
+            .
           </p>
           <OpeningAccountsForm
             rows={rows}
