@@ -6,7 +6,8 @@ import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { audit } from "@/lib/audit";
 import { requireBusiness } from "@/lib/business";
-import { PeriodLockedError, assertOpen, lockMessage, reconciledMessage } from "@/lib/period-lock";
+import { lockMessage, reconciledMessage } from "@/lib/period-lock";
+import { blockedWithMessage } from "@/lib/lock-guard";
 import { round2 } from "@/lib/money";
 import { replaceEntry, removeEntry } from "@/lib/ledger";
 import { accountSchema, firstError, journalLineSchema, parseJsonField, taxRateSchema } from "@/lib/validators";
@@ -98,9 +99,7 @@ export async function deleteManualJournal(formData: FormData) {
     where: { id: String(formData.get("entryId")), businessId: business.id, sourceType: "MANUAL" },
   });
   if (entry?.sourceId) {
-    assertOpen(business, entry.date);
-    const reconciled = await reconciledMessage("MANUAL", entry.sourceId);
-    if (reconciled) throw new PeriodLockedError(reconciled);
+    if (await blockedWithMessage(lockMessage(business, entry.date) ?? (await reconciledMessage("MANUAL", entry.sourceId)))) return;
     await removeEntry("MANUAL", entry.sourceId);
     await audit(business.id, "DELETE", "JOURNAL", entry.sourceId, `Deleted manual journal "${entry.memo}"`);
   }

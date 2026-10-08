@@ -54,13 +54,15 @@ export function ReminderActions({
   return (
     <div className="space-y-2">
       <div className="flex flex-wrap items-center gap-2">
-        <Select value={tone} onChange={(e) => setTone(e.target.value as ReminderTone)} aria-label="Tone" className="w-auto">
+        <div className="w-44">
+        <Select value={tone} onChange={(e) => setTone(e.target.value as ReminderTone)} aria-label="Tone">
           {(Object.keys(TONE_LABEL) as ReminderTone[]).map((t) => (
             <option key={t} value={t}>
               {TONE_LABEL[t]}
             </option>
           ))}
         </Select>
+        </div>
         {whatsappNumber ? (
           <Button type="button" size="sm" onClick={sendWhatsApp} disabled={pending}>
             WhatsApp

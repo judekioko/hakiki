@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { z } from "zod";
 import { prisma } from "@/lib/prisma";
 import { requireBusiness } from "@/lib/business";
+import { blockedByLock } from "@/lib/lock-guard";
 import { audit } from "@/lib/audit";
 import { formatDate } from "@/lib/format";
 import { round2 } from "@/lib/money";
@@ -12,7 +13,7 @@ import { findOrCreateSupplier } from "@/lib/suppliers";
 import { accountIdsByKey, postBill, postSalesInvoice, replaceEntry } from "@/lib/ledger";
 import { runAutoMatch } from "@/lib/auto-match";
 import { runReceiptAutoMatch } from "@/lib/receipt-match";
-import { assertDocumentOpen, lockMessage, reconciledMessage } from "@/lib/period-lock";
+import { lockMessage, reconciledMessage } from "@/lib/period-lock";
 import { OPENING_EXCLUDED_KEYS, debitNatured } from "@/lib/opening-balances";
 import { firstError, parseJsonField } from "@/lib/validators";
 import type { ActionState } from "./types";
@@ -186,7 +187,7 @@ export async function deleteOpeningInvoice(formData: FormData) {
   });
   // Once payments or credits are applied it is part of the customer's history; void it instead.
   if (!invoice || invoice.allocations.length + invoice.creditAllocations.length > 0) return;
-  await assertDocumentOpen(business, "salesInvoice", invoice.id);
+  if (await blockedByLock(business, "salesInvoice", invoice.id)) return;
   await prisma.salesInvoice.delete({ where: { id: invoice.id } });
   await postSalesInvoice(invoice.id);
   await audit(business.id, "DELETE", "OPENING_BALANCES", invoice.id, `Removed opening balance ${invoice.number}`);
@@ -254,7 +255,7 @@ export async function deleteOpeningBill(formData: FormData) {
     include: { allocations: { select: { id: true } }, creditAllocations: { select: { id: true } } },
   });
   if (!bill || bill.allocations.length + bill.creditAllocations.length > 0) return;
-  await assertDocumentOpen(business, "bill", bill.id);
+  if (await blockedByLock(business, "bill", bill.id)) return;
   await prisma.invoice.delete({ where: { id: bill.id } });
   await postBill(bill.id);
   await audit(business.id, "DELETE", "OPENING_BALANCES", bill.id, `Removed opening balance ${bill.invoiceNumber}`);

@@ -166,6 +166,7 @@ export default async function PurchaseOrderPage({ params }: { params: Promise<{ 
               </CardHeader>
               <CardBody>
                 <GoodsReceiptForm
+                  key={progress.map((p) => p.received).join("-")}
                   orderId={order.id}
                   today={toDateInput(new Date())}
                   lines={lines.map((l) => ({

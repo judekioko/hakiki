@@ -3,6 +3,8 @@ import { DashboardShell } from "@/components/dashboard-shell";
 import { prisma } from "@/lib/prisma";
 import { requireSession } from "@/lib/session";
 import { getActiveBusiness, listMyBusinesses } from "@/lib/business";
+import { readFlash } from "@/lib/flash";
+import { FlashBanner } from "@/components/flash-banner";
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const session = await requireSession();
@@ -19,6 +21,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       businesses={businesses.map((b) => ({ id: b.id, name: b.name }))}
       activeBusinessId={active?.id ?? null}
     >
+      <FlashBanner message={await readFlash()} />
       {children}
     </DashboardShell>
   );

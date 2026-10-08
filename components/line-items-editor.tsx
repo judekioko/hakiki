@@ -91,7 +91,7 @@ export function LineItemsEditor({
   const taxTotal = computed.reduce((s, c) => s + c.tax, 0);
   const dp = currency ? currencyDigits(currency) : 2;
   const fmt = (n: number) => n.toLocaleString("en-GB", { minimumFractionDigits: dp, maximumFractionDigits: dp });
-  const accountChoices = accounts.filter((a) => (side === "sale" ? a.type === "INCOME" : a.type !== "INCOME"));
+  const accountChoices = accounts.filter((a) => (side === "sale" ? a.type === "INCOME" : a.type === "EXPENSE" || a.type === "ASSET"));
 
   const payload = JSON.stringify(
     lines

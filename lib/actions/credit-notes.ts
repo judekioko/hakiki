@@ -4,7 +4,8 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { requireBusiness } from "@/lib/business";
-import { assertDocumentOpen, documentLockMessage, lockMessage } from "@/lib/period-lock";
+import { blockedByLock } from "@/lib/lock-guard";
+import { documentLockMessage, lockMessage } from "@/lib/period-lock";
 import { num, round2 } from "@/lib/money";
 import { audit } from "@/lib/audit";
 import { accountIdsByKey, postCreditNote } from "@/lib/ledger";
@@ -138,7 +139,7 @@ export async function issueCreditNote(formData: FormData) {
   const { business } = await requireBusiness();
   const note = await ownedNote(business.id, formData);
   if (!note || note.status !== "DRAFT") return;
-  await assertDocumentOpen(business, "creditNote", note.id);
+  if (await blockedByLock(business, "creditNote", note.id)) return;
   await prisma.creditNote.update({ where: { id: note.id }, data: { status: "ISSUED" } });
   await postCreditNote(note.id);
   if (note.invoiceId) await applyCredit(note.id, note.invoiceId);
@@ -150,7 +151,7 @@ export async function voidCreditNote(formData: FormData) {
   const { business } = await requireBusiness();
   const note = await ownedNote(business.id, formData);
   if (!note || note.status !== "ISSUED") return;
-  await assertDocumentOpen(business, "creditNote", note.id);
+  if (await blockedByLock(business, "creditNote", note.id)) return;
   // The invoices it was reducing owe their full amount again.
   await prisma.creditAllocation.deleteMany({ where: { creditNoteId: note.id } });
   await prisma.creditNote.update({ where: { id: note.id }, data: { status: "VOID" } });

@@ -19,7 +19,8 @@ export default async function CloseBooksPage() {
   const today = new Date();
   const lastMonthEnd = new Date(Date.UTC(today.getUTCFullYear(), today.getUTCMonth(), 1) - DAY_MS);
   const lastYear = financialYear(currentFinancialYear(business.yearEndMonth, today) - 1, business.yearEndMonth);
-  const lastYearEnd = new Date(lastYear.end.getTime() - DAY_MS);
+  // The period end is the first instant after the year (Nairobi midnight); the last day itself is a day earlier.
+  const lastYearEnd = new Date(lastYear.end.getTime() + 3 * 60 * 60 * 1000 - DAY_MS);
   const suggestions = [
     { label: "end of last month", value: toDateInput(lastMonthEnd) },
     { label: `end of ${lastYear.label}`, value: toDateInput(lastYearEnd) },

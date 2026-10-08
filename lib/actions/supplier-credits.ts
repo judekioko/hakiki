@@ -4,11 +4,12 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { requireBusiness } from "@/lib/business";
+import { blockedByLock } from "@/lib/lock-guard";
 import { num, round2 } from "@/lib/money";
 import { audit } from "@/lib/audit";
 import { accountIdsByKey, postSupplierCredit } from "@/lib/ledger";
 import { priceLines, totals } from "@/lib/document-lines";
-import { assertDocumentOpen, documentLockMessage, lockMessage } from "@/lib/period-lock";
+import { documentLockMessage, lockMessage } from "@/lib/period-lock";
 import { runAutoMatch } from "@/lib/auto-match";
 import { firstError, linesSchema, parseJsonField, supplierCreditSchema } from "@/lib/validators";
 import type { ActionState } from "./types";
@@ -143,7 +144,7 @@ export async function issueSupplierCredit(formData: FormData) {
   const { business } = await requireBusiness();
   const credit = await ownedCredit(business.id, formData);
   if (!credit || credit.status !== "DRAFT") return;
-  await assertDocumentOpen(business, "supplierCredit", credit.id);
+  if (await blockedByLock(business, "supplierCredit", credit.id)) return;
   await prisma.supplierCredit.update({ where: { id: credit.id }, data: { status: "ISSUED" } });
   await postSupplierCredit(credit.id);
   if (credit.billId) await applyCredit(credit.id, credit.billId);
@@ -155,7 +156,7 @@ export async function voidSupplierCredit(formData: FormData) {
   const { business } = await requireBusiness();
   const credit = await ownedCredit(business.id, formData);
   if (!credit || credit.status !== "ISSUED") return;
-  await assertDocumentOpen(business, "supplierCredit", credit.id);
+  if (await blockedByLock(business, "supplierCredit", credit.id)) return;
   // The bills it was reducing are owed in full again.
   await prisma.supplierCreditAllocation.deleteMany({ where: { creditId: credit.id } });
   await prisma.supplierCredit.update({ where: { id: credit.id }, data: { status: "VOID" } });

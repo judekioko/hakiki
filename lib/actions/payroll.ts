@@ -5,7 +5,8 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { audit } from "@/lib/audit";
 import { requireBusiness } from "@/lib/business";
-import { assertDocumentOpen, lockMessage } from "@/lib/period-lock";
+import { blockedByLock } from "@/lib/lock-guard";
+import { lockMessage } from "@/lib/period-lock";
 import { countryPack } from "@/lib/countries";
 import { num, round2 } from "@/lib/money";
 import { accountIdsByKey, postPayment, postPayRun } from "@/lib/ledger";
@@ -231,7 +232,7 @@ export async function approvePayRun(formData: FormData) {
   const { business } = await requireBusiness();
   const run = await prisma.payRun.findFirst({ where: { id: String(formData.get("payRunId")), businessId: business.id } });
   if (!run || run.status !== "DRAFT") return;
-  await assertDocumentOpen(business, "payRun", run.id);
+  if (await blockedByLock(business, "payRun", run.id)) return;
   await prisma.payRun.update({ where: { id: run.id }, data: { status: "APPROVED" } });
   await postPayRun(run.id);
   await audit(business.id, "APPROVE", "PAY_RUN", run.id, "Approved pay run");
@@ -242,7 +243,7 @@ export async function reopenPayRun(formData: FormData) {
   const { business } = await requireBusiness();
   const run = await prisma.payRun.findFirst({ where: { id: String(formData.get("payRunId")), businessId: business.id } });
   if (!run || run.status !== "APPROVED") return;
-  await assertDocumentOpen(business, "payRun", run.id);
+  if (await blockedByLock(business, "payRun", run.id)) return;
   await prisma.payRun.update({ where: { id: run.id }, data: { status: "DRAFT" } });
   await postPayRun(run.id);
   await audit(business.id, "REOPEN", "PAY_RUN", run.id, "Reopened an approved pay run");

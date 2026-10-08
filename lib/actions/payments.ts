@@ -5,7 +5,8 @@ import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { audit } from "@/lib/audit";
 import { requireBusiness } from "@/lib/business";
-import { assertDocumentOpen, isLocked, lockMessage } from "@/lib/period-lock";
+import { blockedByLock } from "@/lib/lock-guard";
+import { isLocked, lockMessage } from "@/lib/period-lock";
 import { parseStatement } from "@/lib/statement-import";
 import { normaliseAlias } from "@/lib/matching";
 import { aliasIndex } from "@/lib/suppliers";
@@ -199,7 +200,7 @@ export async function setPaymentCategory(formData: FormData) {
   const { business } = await requireBusiness();
   const paymentId = String(formData.get("paymentId"));
   const categoryAccountId = await validCategory(business.id, formData.get("categoryAccountId"));
-  await assertDocumentOpen(business, "payment", paymentId);
+  if (await blockedByLock(business, "payment", paymentId)) return;
   const updated = await prisma.payment.updateMany({
     where: { id: paymentId, businessId: business.id },
     data: { categoryAccountId },
@@ -216,7 +217,7 @@ export async function markExempt(formData: FormData) {
     exemptNote: formData.get("exemptNote") ?? "",
   });
   if (!parsed.success) throw new Error(firstError(parsed.error));
-  await assertDocumentOpen(business, "payment", parsed.data.paymentId);
+  if (await blockedByLock(business, "payment", parsed.data.paymentId)) return;
 
   const updated = await prisma.payment.updateMany({
     where: { id: parsed.data.paymentId, businessId: business.id },
@@ -229,7 +230,7 @@ export async function markExempt(formData: FormData) {
 export async function clearExempt(formData: FormData) {
   const { business } = await requireBusiness();
   const paymentId = String(formData.get("paymentId"));
-  await assertDocumentOpen(business, "payment", paymentId);
+  if (await blockedByLock(business, "payment", paymentId)) return;
   const updated = await prisma.payment.updateMany({
     where: { id: paymentId, businessId: business.id },
     data: { exemptReason: null, exemptNote: null },
@@ -246,7 +247,7 @@ export async function bulkMarkExempt(formData: FormData) {
   if (!reason.success || ids.length === 0) return;
 
   const owned = await prisma.payment.findMany({ where: { id: { in: ids }, businessId: business.id }, select: { id: true } });
-  for (const p of owned) await assertDocumentOpen(business, "payment", p.id);
+  for (const p of owned) if (await blockedByLock(business, "payment", p.id)) return;
   await prisma.payment.updateMany({
     where: { id: { in: owned.map((p) => p.id) } },
     data: { exemptReason: reason.data },
@@ -258,7 +259,7 @@ export async function bulkMarkExempt(formData: FormData) {
 export async function deletePayment(formData: FormData) {
   const { business } = await requireBusiness();
   const paymentId = String(formData.get("paymentId"));
-  await assertDocumentOpen(business, "payment", paymentId);
+  if (await blockedByLock(business, "payment", paymentId)) return;
   const deleted = await prisma.payment.deleteMany({ where: { id: paymentId, businessId: business.id } });
   if (deleted.count) {
     await postPayment(paymentId);
