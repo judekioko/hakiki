@@ -15,6 +15,7 @@ import { runAutoMatch } from "@/lib/auto-match";
 import { runReceiptAutoMatch } from "@/lib/receipt-match";
 import { lockMessage, reconciledMessage } from "@/lib/period-lock";
 import { OPENING_EXCLUDED_KEYS, debitNatured } from "@/lib/opening-balances";
+import { createOpeningBill, createOpeningInvoice } from "@/lib/opening-items";
 import { firstError, parseJsonField } from "@/lib/validators";
 import type { ActionState } from "./types";
 
@@ -124,13 +125,6 @@ export async function addOpeningInvoice(_prev: ActionState, formData: FormData):
   if (!parsed.success) return { error: firstError(parsed.error) };
   const dates = openingDates(formData, business.openingDate);
   if ("error" in dates) return { error: dates.error };
-  const locked = lockMessage(business, dates.issue);
-  if (locked) return { error: locked };
-
-  const number = `OB-${parsed.data.reference.toUpperCase()}`;
-  if (await prisma.salesInvoice.findUnique({ where: { businessId_number: { businessId: business.id, number } } })) {
-    return { error: `${number} has already been entered` };
-  }
 
   let customer = String(formData.get("customerId") ?? "")
     ? await prisma.customer.findFirst({ where: { id: String(formData.get("customerId")), businessId: business.id } })
@@ -141,41 +135,17 @@ export async function addOpeningInvoice(_prev: ActionState, formData: FormData):
     customer = await prisma.customer.create({ data: { businessId: business.id, name, aliases: [normaliseAlias(name)] } });
   }
 
-  const keys = await accountIdsByKey(business.id);
-  const amount = round2(parsed.data.amount);
-  const invoice = await prisma.salesInvoice.create({
-    data: {
-      businessId: business.id,
-      customerId: customer.id,
-      number,
-      status: "SENT",
-      isOpening: true,
-      issueDate: dates.issue,
-      dueDate: dates.due,
-      reference: parsed.data.reference.toUpperCase(),
-      notes: "Balance brought forward from before Hakiki",
-      subtotal: amount,
-      taxTotal: 0,
-      total: amount,
-      lines: {
-        create: [
-          {
-            description: `Balance brought forward: invoice ${parsed.data.reference.toUpperCase()}`,
-            quantity: 1,
-            unitPrice: amount,
-            accountId: keys.OPENING_BALANCE,
-            lineTotal: amount,
-            taxAmount: 0,
-          },
-        ],
-      },
-    },
+  const result = await createOpeningInvoice(business, customer, {
+    reference: parsed.data.reference,
+    amount: parsed.data.amount,
+    issue: dates.issue,
+    due: dates.due,
   });
-  await postSalesInvoice(invoice.id);
+  if ("error" in result) return { error: result.error };
   await runReceiptAutoMatch(business.id);
-  await audit(business.id, "CREATE", "OPENING_BALANCES", invoice.id, `Entered opening balance ${number} for ${customer.name} (${amount.toFixed(2)})`);
+  await audit(business.id, "CREATE", "OPENING_BALANCES", null, `Entered opening balance ${result.number} for ${customer.name} (${round2(parsed.data.amount).toFixed(2)})`);
   revalidateAll();
-  return { success: `Added ${number} for ${customer.name}` };
+  return { success: `Added ${result.number} for ${customer.name}` };
 }
 
 export async function deleteOpeningInvoice(formData: FormData) {
@@ -203,13 +173,6 @@ export async function addOpeningBill(_prev: ActionState, formData: FormData): Pr
   if (!parsed.success) return { error: firstError(parsed.error) };
   const dates = openingDates(formData, business.openingDate);
   if ("error" in dates) return { error: dates.error };
-  const locked = lockMessage(business, dates.issue);
-  if (locked) return { error: locked };
-
-  const invoiceNumber = `OB-${parsed.data.reference.toUpperCase()}`;
-  if (await prisma.invoice.findUnique({ where: { businessId_invoiceNumber: { businessId: business.id, invoiceNumber } } })) {
-    return { error: `${invoiceNumber} has already been entered` };
-  }
 
   let supplier = String(formData.get("supplierId") ?? "")
     ? await prisma.supplier.findFirst({ where: { id: String(formData.get("supplierId")), businessId: business.id } })
@@ -220,31 +183,17 @@ export async function addOpeningBill(_prev: ActionState, formData: FormData): Pr
     supplier = await findOrCreateSupplier(business.id, name, null);
   }
 
-  const keys = await accountIdsByKey(business.id);
-  const amount = round2(parsed.data.amount);
-  const bill = await prisma.invoice.create({
-    data: {
-      businessId: business.id,
-      supplierId: supplier.id,
-      supplierName: supplier.name,
-      supplierPin: supplier.kraPin,
-      invoiceNumber,
-      invoiceDate: dates.issue,
-      dueDate: dates.due,
-      totalAmount: amount,
-      vatAmount: 0,
-      description: "Balance brought forward from before Hakiki",
-      categoryAccountId: keys.OPENING_BALANCE,
-      // Already tax-reported in an earlier period, so it is not something to chase an invoice for.
-      status: "VERIFIED",
-      isOpening: true,
-    },
+  const result = await createOpeningBill(business, supplier, {
+    reference: parsed.data.reference,
+    amount: parsed.data.amount,
+    issue: dates.issue,
+    due: dates.due,
   });
-  await postBill(bill.id);
+  if ("error" in result) return { error: result.error };
   await runAutoMatch(business.id);
-  await audit(business.id, "CREATE", "OPENING_BALANCES", bill.id, `Entered opening balance ${invoiceNumber} owed to ${supplier.name} (${amount.toFixed(2)})`);
+  await audit(business.id, "CREATE", "OPENING_BALANCES", null, `Entered opening balance ${result.number} owed to ${supplier.name} (${round2(parsed.data.amount).toFixed(2)})`);
   revalidateAll();
-  return { success: `Added ${invoiceNumber} owed to ${supplier.name}` };
+  return { success: `Added ${result.number} owed to ${supplier.name}` };
 }
 
 export async function deleteOpeningBill(formData: FormData) {
