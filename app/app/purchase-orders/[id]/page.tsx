@@ -5,7 +5,7 @@ import { requireBusiness } from "@/lib/business";
 import { num } from "@/lib/money";
 import { currencyDigits, formatDate, formatNumber, toDateInput } from "@/lib/format";
 import { businessContext } from "@/lib/form-options";
-import { PO_DISPLAY, displayStatus, orderProgress, orderUsesAccrual } from "@/lib/purchase-orders";
+import { PO_DISPLAY, displayStatus, orderAccrualMode, orderProgress } from "@/lib/purchase-orders";
 import { orderLineValue } from "@/lib/grni";
 import { deleteGoodsReceipt, deletePurchaseOrder, setPurchaseOrderStatus } from "@/lib/actions/purchase-orders";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
@@ -43,12 +43,13 @@ export default async function PurchaseOrderPage({ params }: { params: Promise<{ 
   if (!order) notFound();
 
   const { lines, progress } = await orderProgress(order.id);
-  const accrual = await orderUsesAccrual(order.id);
+  const mode = await orderAccrualMode(order.id);
+  const accrual = mode.stock;
   // Stock that has arrived but whose bill has not (value held in "Goods received not invoiced"), and the reverse.
   let awaitingBill = 0;
   let billedEarly = 0;
   for (const l of lines) {
-    if (l.item?.kind !== "INVENTORY") continue;
+    if (l.item?.kind !== "INVENTORY" && !mode.services) continue;
     const p = progress.find((x) => x.id === l.id)!;
     awaitingBill += orderLineValue(l, Math.max(0, p.received - p.billed), business.vatRegistered);
     billedEarly += orderLineValue(l, Math.max(0, p.billed - p.received), business.vatRegistered);
@@ -189,7 +190,9 @@ export default async function PurchaseOrderPage({ params }: { params: Promise<{ 
                 />
                 <p className="mt-3 text-xs text-slate-500">
                   {accrual
-                    ? "Stocked items go into stock as soon as you record the delivery, at the price on this order. The amount you owe the supplier is booked when you record their bill."
+                    ? mode.services
+                      ? "Stocked items go into stock, and services are charged to their expense account, as soon as you record the delivery, at the price on this order. The amount you owe the supplier is booked when you record their bill."
+                      : "Stocked items go into stock as soon as you record the delivery, at the price on this order. Services and non-stock lines on this order are charged when you record the supplier's bill. The amount you owe is booked with the bill."
                     : "This order was received or billed before delivery accounting existed, so stock is added when the bill is recorded."}
                 </p>
               </CardBody>
@@ -201,13 +204,13 @@ export default async function PurchaseOrderPage({ params }: { params: Promise<{ 
               <CardBody className="space-y-1 text-sm text-slate-600">
                 {awaitingBill > 0 ? (
                   <p>
-                    <strong className="text-slate-900">{fmt(awaitingBill)}</strong> of stock has arrived and is waiting for the supplier&apos;s bill.
+                    <strong className="text-slate-900">{fmt(awaitingBill)}</strong> of stock and services has been received and is waiting for the supplier&apos;s bill.
                   </p>
                 ) : null}
                 {billedEarly > 0 ? (
                   <p>
-                    <strong className="text-slate-900">{fmt(billedEarly)}</strong> has been billed for stock that has not arrived yet. Record the
-                    delivery when it comes so the stock is counted.
+                    <strong className="text-slate-900">{fmt(billedEarly)}</strong> has been billed for goods or services not yet received. Record the
+                    delivery when it comes so it is counted.
                   </p>
                 ) : null}
               </CardBody>

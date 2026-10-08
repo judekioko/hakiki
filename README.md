@@ -32,8 +32,11 @@ place, in the business's own currency.
   and raise the supplier bill from the order with quantities prefilled from what arrived and has not been billed.
   Ordered, received and billed are tracked per line. Delivered stock goes into inventory when the delivery is recorded,
   at the order price, against "Goods received not invoiced"; the supplier's bill clears that account and posts any price
-  difference to "Purchase price variance". The amount owed to the supplier is booked when the bill is recorded. Orders
-  already received or billed before this existed keep the old method (the bill adds the stock).
+  difference to "Purchase price variance". Service and non-stock lines work the same way: their cost is charged to the
+  order's expense account when they are received, and the bill clears it (extra charges go to the bill's expense
+  account, and a different account moves the cost across). The amount owed to the supplier is booked when the bill is
+  recorded. Orders already received or billed before this existed keep the earlier method (the bill adds the stock or
+  the expense).
 - **Supplier credit notes:** record a credit from a supplier (goods returned, overcharge, discount), optionally taking
   returned stock out of inventory. It reverses the bill's cost and input tax, is applied to the bill it corrects, and
   reduces the bill's balance in payables ageing and payment matching.

@@ -113,7 +113,7 @@ export async function businessInsights(business: { id: string; currency: string;
   const grni = await prisma.journalLine.aggregate({ where: { account: { businessId: business.id, systemKey: "GRNI" } }, _sum: { debit: true, credit: true } });
   const awaitingBills = round2(num(grni._sum.credit) - num(grni._sum.debit));
   if (awaitingBills > 0.5) {
-    insights.push({ tone: "info", text: `${money(awaitingBills)} of stock has been delivered and is waiting for the supplier bill.`, href: "/app/purchase-orders" });
+    insights.push({ tone: "info", text: `${money(awaitingBills)} of goods and services has been received and is waiting for the supplier bill.`, href: "/app/purchase-orders" });
   }
   const openQuotes = quotes.filter((q) => quoteStatus(q) !== "EXPIRED");
   const lateOrders = orders.filter(

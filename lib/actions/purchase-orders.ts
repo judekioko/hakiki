@@ -9,7 +9,7 @@ import { num } from "@/lib/money";
 import { audit } from "@/lib/audit";
 import { accountIdsByKey } from "@/lib/ledger";
 import { nextDocumentNumber, priceLines, totals } from "@/lib/document-lines";
-import { orderProgress, orderUsesAccrual } from "@/lib/purchase-orders";
+import { orderAccrualMode, orderProgress } from "@/lib/purchase-orders";
 import { postGoodsReceipt } from "@/lib/ledger";
 import { lockMessage } from "@/lib/period-lock";
 import { blockedByLock } from "@/lib/lock-guard";
@@ -160,14 +160,15 @@ export async function recordGoodsReceipt(_prev: ActionState, formData: FormData)
     }
   }
 
-  const accrued = await orderUsesAccrual(order.id);
+  const mode = await orderAccrualMode(order.id);
   const receipt = await prisma.goodsReceipt.create({
     data: {
       businessId: business.id,
       orderId: order.id,
       number: await nextDocumentNumber(business.id, "GRN-"),
       receivedDate: receivedAt,
-      accrued,
+      accrued: mode.stock,
+      accruesServices: mode.services,
       note: String(formData.get("note") ?? "").trim() || null,
       lines: { create: quantities.map((q) => ({ orderLineId: q.lineId, quantity: q.quantity })) },
     },

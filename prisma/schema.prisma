@@ -511,6 +511,8 @@ model Invoice {
   purchaseOrder      PurchaseOrder?             @relation(fields: [purchaseOrderId], references: [id], onDelete: SetNull)
   // Stock lines raised from a purchase order clear Goods received not invoiced instead of adding stock themselves.
   usesGrni           Boolean                    @default(false)
+  // Service and non-stock lines raised from a purchase order clear the cost booked when they were received.
+  accruesServices    Boolean                    @default(false)
   supplierCredits    SupplierCredit[]
   creditAllocations  SupplierCreditAllocation[]
 
@@ -925,18 +927,20 @@ model PurchaseOrderLine {
 
 // A delivery against a purchase order.
 model GoodsReceipt {
-  id           String             @id @default(cuid())
-  businessId   String
-  orderId      String
-  number       String
-  receivedDate DateTime           @db.Date
-  note         String?
+  id              String             @id @default(cuid())
+  businessId      String
+  orderId         String
+  number          String
+  receivedDate    DateTime           @db.Date
+  note            String?
   // Booked to stock and Goods received not invoiced when recorded. Receipts from before this existed are not.
-  accrued      Boolean            @default(false)
-  createdAt    DateTime           @default(now())
-  business     Business           @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  order        PurchaseOrder      @relation(fields: [orderId], references: [id], onDelete: Cascade)
-  lines        GoodsReceiptLine[]
+  accrued         Boolean            @default(false)
+  // Also books the cost of service and non-stock lines when they are received.
+  accruesServices Boolean            @default(false)
+  createdAt       DateTime           @default(now())
+  business        Business           @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  order           PurchaseOrder      @relation(fields: [orderId], references: [id], onDelete: Cascade)
+  lines           GoodsReceiptLine[]
 
   @@unique([businessId, number])
 }

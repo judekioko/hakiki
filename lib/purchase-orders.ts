@@ -79,13 +79,21 @@ export async function orderSummaries(businessId: string) {
   });
 }
 
-// Whether this order books stock when goods arrive (and its bills clear "Goods received not invoiced"). Orders that
-// were already received or billed under the earlier method, where the bill added the stock, carry on that way, so
-// nothing is counted twice.
-export async function orderUsesAccrual(orderId: string): Promise<boolean> {
-  const [legacyReceipts, legacyBills] = await Promise.all([
+// How this order is accounted for. Stock: delivered stock goes into inventory at once and its bill clears "Goods
+// received not invoiced". Services: the cost of service and non-stock lines is booked when they are received, the same
+// way. Orders that were already received or billed under an earlier method carry on that way, so nothing is
+// counted twice.
+export async function orderAccrualMode(orderId: string): Promise<{ stock: boolean; services: boolean }> {
+  const [legacyStockReceipts, legacyStockBills, legacyServiceReceipts, legacyServiceBills] = await Promise.all([
     prisma.goodsReceipt.count({ where: { orderId, accrued: false } }),
     prisma.invoice.count({ where: { purchaseOrderId: orderId, usesGrni: false } }),
+    prisma.goodsReceipt.count({ where: { orderId, accruesServices: false } }),
+    prisma.invoice.count({ where: { purchaseOrderId: orderId, accruesServices: false } }),
   ]);
-  return legacyReceipts + legacyBills === 0;
+  const stock = legacyStockReceipts + legacyStockBills === 0;
+  return { stock, services: stock && legacyServiceReceipts + legacyServiceBills === 0 };
+}
+
+export async function orderUsesAccrual(orderId: string): Promise<boolean> {
+  return (await orderAccrualMode(orderId)).stock;
 }

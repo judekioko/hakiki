@@ -13,7 +13,7 @@ import { postBill, postPayment } from "@/lib/ledger";
 import { firstError, invoiceSchema, linesSchema, parseJsonField, taxIdFor } from "@/lib/validators";
 import { priceLines, priceLinesFx, totals, totalsFx, type PricedLineFx } from "@/lib/document-lines";
 import { CURRENCIES } from "@/lib/currencies";
-import { orderUsesAccrual } from "@/lib/purchase-orders";
+import { orderAccrualMode } from "@/lib/purchase-orders";
 import { round2 } from "@/lib/money";
 import { accountIdsByKey } from "@/lib/ledger";
 import type { ActionState } from "./types";
@@ -118,6 +118,7 @@ export async function createInvoice(_prev: ActionState, formData: FormData): Pro
     };
   }
 
+  const accrualMode = purchaseOrderId ? await orderAccrualMode(purchaseOrderId) : null;
   const invoice = await prisma.invoice.create({
     data: {
       businessId: business.id,
@@ -132,7 +133,8 @@ export async function createInvoice(_prev: ActionState, formData: FormData): Pro
       description: data.description,
       categoryAccountId: category?.id ?? null,
       purchaseOrderId: purchaseOrderId || null,
-      usesGrni: purchaseOrderId ? await orderUsesAccrual(purchaseOrderId) : false,
+      usesGrni: accrualMode?.stock ?? false,
+      accruesServices: accrualMode?.services ?? false,
       currency: foreign ? currency : null,
       exchangeRate: foreign ? rate : null,
       foreignTotalAmount: foreignAmounts?.foreignTotalAmount ?? null,

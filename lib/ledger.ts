@@ -171,8 +171,21 @@ export async function postBill(invoiceId: string) {
       // Non-VAT-registered businesses cannot reclaim input VAT, so it becomes part of the cost.
       const cost = claimVat ? net : round2(net + tax);
       if (claimVat) vatTotal += tax;
-      const orderLine = isStock && line.purchaseOrderLineId ? orderLines.find((o) => o.id === line.purchaseOrderLineId) : undefined;
-      if (orderLine && grniId && varianceId) {
+      const orderLine = line.purchaseOrderLineId ? orderLines.find((o) => o.id === line.purchaseOrderLineId) : undefined;
+      if (orderLine && !isStock && bill.accruesServices && grniId) {
+        // A service or non-stock line: its cost was booked to the order's expense account when it was received. The
+        // bill settles that accrual; a different price is more expense on the bill's account, and a different
+        // account moves the cost across.
+        const cleared = orderLineValue(orderLine, num(line.quantity), claimVat);
+        lines.push({ accountId: grniId, debit: cleared });
+        const variance = round2(cost - cleared);
+        if (variance !== 0) lines.push(variance > 0 ? { accountId: line.accountId, debit: variance } : { accountId: line.accountId, credit: -variance });
+        if (line.accountId !== orderLine.accountId && cleared !== 0) {
+          lines.push({ accountId: line.accountId, debit: cleared }, { accountId: orderLine.accountId, credit: cleared });
+        }
+        continue;
+      }
+      if (orderLine && isStock && grniId && varianceId) {
         // Stock came in (or will) with the delivery. The bill settles that accrual at the order price; whatever the
         // supplier charged above or below it is a price variance.
         const cleared = orderLineValue(orderLine, num(line.quantity), claimVat);
@@ -405,8 +418,9 @@ export async function postSupplierCredit(creditId: string) {
   });
 }
 
-// A delivery against a purchase order: stock comes in at the order price and the same amount is held in "Goods
-// received not invoiced" until the supplier's bill arrives. Only receipts recorded since this existed are booked.
+// A delivery against a purchase order: stock comes in at the order price, and service or non-stock lines are charged to
+// their expense account, with the same amount held in "Goods received not invoiced" until the supplier's bill
+// arrives. Only receipts recorded since this existed are booked.
 export async function postGoodsReceipt(receiptId: string) {
   const receipt = await prisma.goodsReceipt.findUnique({
     where: { id: receiptId },
@@ -425,9 +439,13 @@ export async function postGoodsReceipt(receiptId: string) {
   const lines: Line[] = [];
   for (const line of receipt.lines) {
     const orderLine = line.orderLine;
-    if (orderLine.item?.kind !== "INVENTORY" || !orderLine.itemId) continue;
     const qty = num(line.quantity);
     const value = orderLineValue(orderLine, qty, claimVat);
+    if (orderLine.item?.kind !== "INVENTORY" || !orderLine.itemId) {
+      // A service or non-stock line: the cost is incurred when it is received, on the order's expense account.
+      if (receipt.accruesServices && value !== 0) lines.push({ accountId: orderLine.accountId, debit: value }, { accountId: grniId, credit: value });
+      continue;
+    }
     await prisma.stockMovement.create({
       data: {
         businessId: receipt.businessId,
