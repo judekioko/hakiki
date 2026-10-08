@@ -68,12 +68,17 @@ export function totals(lines: PricedLine[]) {
 
 export async function nextDocumentNumber(businessId: string, prefix: string) {
   const where = { businessId, number: { startsWith: prefix } };
+  const select = { number: true };
   const latest =
     prefix === "CN-"
-      ? await prisma.creditNote.findMany({ where, select: { number: true } })
+      ? await prisma.creditNote.findMany({ where, select })
       : prefix === "QUO-"
-        ? await prisma.quotation.findMany({ where, select: { number: true } })
-        : await prisma.salesInvoice.findMany({ where, select: { number: true } });
+        ? await prisma.quotation.findMany({ where, select })
+        : prefix === "PO-"
+          ? await prisma.purchaseOrder.findMany({ where, select })
+          : prefix === "GRN-"
+            ? await prisma.goodsReceipt.findMany({ where, select })
+            : await prisma.salesInvoice.findMany({ where, select });
   const max = latest.reduce((m, r) => Math.max(m, Number(r.number.slice(prefix.length)) || 0), 0);
   return `${prefix}${String(max + 1).padStart(4, "0")}`;
 }

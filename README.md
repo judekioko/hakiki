@@ -28,6 +28,10 @@ place, in the business's own currency.
   Each invoice is priced afresh, missed runs are caught up, and invoices that would fall in closed books are dated the
   first open day. Due schedules run when someone opens the app; for unattended runs call
   `GET /api/cron/recurring` with `Authorization: Bearer $CRON_SECRET` from a scheduler.
+- **Purchase orders:** order from a supplier, record deliveries (goods received notes, partial deliveries supported),
+  and raise the supplier bill from the order with quantities prefilled from what arrived and has not been billed.
+  Ordered, received and billed are tracked per line. Orders and deliveries post nothing; stock and the payable are
+  booked when the bill is recorded.
 - **Purchases:** supplier bills (single total or line items), money paid out, suppliers, and the supplier tax-invoice
   check (eTIMS, EFRIS, EBM...) with WhatsApp requests for missing invoices.
 - **Statement import:** bank and mobile money CSVs. Money out becomes payments, money in becomes receipts. Columns are

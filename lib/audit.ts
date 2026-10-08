@@ -16,6 +16,8 @@ export const AUDIT_ENTITIES: Record<string, string> = {
   PERIOD_LOCK: "Closed books",
   RECONCILIATION: "Reconciliation",
   QUOTATION: "Quotation",
+  PURCHASE_ORDER: "Purchase order",
+  GOODS_RECEIPT: "Goods received",
   RECURRING: "Recurring invoice",
 };
 

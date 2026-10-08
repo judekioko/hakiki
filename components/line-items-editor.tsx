@@ -24,6 +24,8 @@ export type EditorLine = {
   unitPrice: string;
   taxRateId: string;
   accountId: string;
+  // Set when the line was prefilled from a purchase order line.
+  poLineId?: string;
 };
 
 const cell =
@@ -101,6 +103,7 @@ export function LineItemsEditor({
         unitPrice: l.unitPrice || "0",
         taxRateId: l.taxRateId || null,
         accountId: l.accountId || null,
+        poLineId: l.poLineId || null,
       }))
   );
 

@@ -10,7 +10,7 @@ import { createInvoice } from "@/lib/actions/invoices";
 import { createSupplier, updateSupplier } from "@/lib/actions/suppliers";
 import { autoMatchAction } from "@/lib/actions/matching";
 import { AccountSelect, Feedback, Field, SubmitButton, useFormAction, type AccountOption, type Option } from "./form-kit";
-import { LineItemsEditor, type EditorItem, type EditorTaxRate } from "./line-items-editor";
+import { LineItemsEditor, type EditorItem, type EditorLine, type EditorTaxRate } from "./line-items-editor";
 
 export { SubmitButton };
 
@@ -252,9 +252,13 @@ export function InvoiceForm({
   items,
   taxRates,
   allowLines = false,
+  purchaseOrderId,
+  initialLines,
 }: {
   suppliers: Option[];
-  defaults?: { supplierId?: string; supplierName?: string; amount?: number; date?: string };
+  defaults?: { supplierId?: string; supplierName?: string; amount?: number; date?: string; description?: string };
+  purchaseOrderId?: string;
+  initialLines?: Omit<EditorLine, "key">[];
   paymentId?: string;
   today: string;
   taxIdLabel: string;
@@ -265,11 +269,12 @@ export function InvoiceForm({
   allowLines?: boolean;
 }) {
   const { state, onSubmit, pending } = useFormAction(createInvoice);
-  const [mode, setMode] = useState<"total" | "lines">("total");
+  const [mode, setMode] = useState<"total" | "lines">(initialLines ? "lines" : "total");
   return (
     <form onSubmit={onSubmit} className="space-y-4">
       <Feedback state={state} />
       <input type="hidden" name="paymentId" value={paymentId ?? ""} />
+      <input type="hidden" name="purchaseOrderId" value={purchaseOrderId ?? ""} />
       <Field label={`${taxInvoiceLabel} number`} htmlFor="invoiceNumber" hint="As printed on the supplier's invoice">
         <Input id="invoiceNumber" name="invoiceNumber" required className="uppercase" />
       </Field>
@@ -314,7 +319,7 @@ export function InvoiceForm({
       ) : null}
 
       {mode === "lines" && items && taxRates ? (
-        <LineItemsEditor side="purchase" items={items} taxRates={taxRates} accounts={categories} chargeTax />
+        <LineItemsEditor side="purchase" items={items} taxRates={taxRates} accounts={categories} chargeTax initial={initialLines} />
       ) : (
         <div className="grid gap-4 sm:grid-cols-2">
           <Field label="Total incl. VAT" htmlFor="totalAmount">
@@ -326,7 +331,7 @@ export function InvoiceForm({
         </div>
       )}
       <Field label="What was bought? (optional)" htmlFor="description">
-        <Input id="description" name="description" />
+        <Input id="description" name="description" defaultValue={defaults?.description ?? ""} />
       </Field>
       <Field label="Invoice photo or PDF (optional)" htmlFor="file" hint="Up to 5 MB. Kept so you can show the tax authority the original.">
         <Input id="file" name="file" type="file" accept="application/pdf,image/jpeg,image/png,image/webp" capture="environment" />

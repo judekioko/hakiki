@@ -124,6 +124,7 @@ export const lineSchema = z.object({
   unitPrice: z.coerce.number().min(0, "Price cannot be negative"),
   taxRateId: z.string().optional().nullable(),
   accountId: z.string().optional().nullable(),
+  poLineId: z.string().optional().nullable(),
 });
 export type LineInput = z.infer<typeof lineSchema>;
 
@@ -168,6 +169,14 @@ export const recurringSchema = z.object({
   startDate: isoDate,
   endDate: optionalText.refine((v) => v === undefined || /^\d{4}-\d{2}-\d{2}$/.test(v), "Enter a valid end date"),
   dueDays: z.coerce.number().int("Payment terms must be whole days").min(0).max(365),
+  reference: optionalText,
+  notes: optionalText,
+});
+
+export const purchaseOrderSchema = z.object({
+  supplierId: z.string().min(1, "Choose a supplier"),
+  orderDate: isoDate,
+  expectedDate: optionalText.refine((v) => v === undefined || /^\d{4}-\d{2}-\d{2}$/.test(v), "Enter a valid expected date"),
   reference: optionalText,
   notes: optionalText,
 });

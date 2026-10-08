@@ -7,6 +7,7 @@ import { createCustomer, recordReceipt, saveSalesInvoice, updateCustomer } from 
 import { saveCreditNote } from "@/lib/actions/credit-notes";
 import { saveQuotation } from "@/lib/actions/quotations";
 import { saveRecurring } from "@/lib/actions/recurring";
+import { savePurchaseOrder } from "@/lib/actions/purchase-orders";
 import { adjustStock, createItem, updateItem } from "@/lib/actions/items";
 import {
   createEmployee,
@@ -419,6 +420,86 @@ export function RecurringForm({
         </span>
       </label>
       <SubmitButton pending={pending}>{recurringId ? "Save changes" : "Start recurring invoice"}</SubmitButton>
+    </form>
+  );
+}
+
+export function PurchaseOrderForm({
+  orderId,
+  status,
+  suppliers,
+  items,
+  taxRates,
+  accounts,
+  currency,
+  defaults,
+}: {
+  orderId?: string;
+  status?: string;
+  suppliers: Option[];
+  items: EditorItem[];
+  taxRates: EditorTaxRate[];
+  accounts: AccountOption[];
+  currency: string;
+  defaults: {
+    supplierId?: string;
+    orderDate: string;
+    expectedDate?: string;
+    reference?: string | null;
+    notes?: string | null;
+    lines?: Omit<EditorLine, "key">[];
+  };
+}) {
+  const { state, onSubmit, pending } = useFormAction(savePurchaseOrder);
+  return (
+    <form onSubmit={onSubmit} className="space-y-5">
+      <Feedback state={state} />
+      <input type="hidden" name="orderId" value={orderId ?? ""} />
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <Field label="Supplier" htmlFor="supplierId">
+          <Select id="supplierId" name="supplierId" defaultValue={defaults.supplierId ?? ""} required>
+            <option value="">Choose a supplier</option>
+            {suppliers.map((s) => (
+              <option key={s.id} value={s.id}>
+                {s.name}
+              </option>
+            ))}
+          </Select>
+        </Field>
+        <Field label="Order date" htmlFor="orderDate">
+          <Input id="orderDate" name="orderDate" type="date" defaultValue={defaults.orderDate} required />
+        </Field>
+        <Field label="Expected delivery (optional)" htmlFor="expectedDate">
+          <Input id="expectedDate" name="expectedDate" type="date" defaultValue={defaults.expectedDate ?? ""} />
+        </Field>
+      </div>
+      <LineItemsEditor
+        side="purchase"
+        items={items}
+        taxRates={taxRates}
+        accounts={accounts}
+        chargeTax
+        initial={defaults.lines}
+        currency={currency}
+      />
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Field label="Reference (optional)" htmlFor="reference">
+          <Input id="reference" name="reference" defaultValue={defaults.reference ?? ""} />
+        </Field>
+        <Field label="Notes to supplier (optional)" htmlFor="notes">
+          <Input id="notes" name="notes" defaultValue={defaults.notes ?? ""} />
+        </Field>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        {!status || status === "DRAFT" ? (
+          <SubmitButton pending={pending} name="intent" value="draft" variant="secondary">
+            Save as draft
+          </SubmitButton>
+        ) : null}
+        <SubmitButton pending={pending} name="intent" value="order">
+          {!status || status === "DRAFT" ? "Save & place order" : "Save changes"}
+        </SubmitButton>
+      </div>
     </form>
   );
 }

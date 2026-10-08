@@ -45,14 +45,22 @@ export async function createInvoice(_prev: ActionState, formData: FormData): Pro
     ? await prisma.account.findFirst({ where: { id: categoryValue, businessId: business.id, moneyKind: null } })
     : null;
   let amounts = { totalAmount: data.totalAmount, vatAmount: data.vatAmount };
-  let lineRows: Awaited<ReturnType<typeof priceLines>>["lines"] = [];
+  let lineRows: (NonNullable<Awaited<ReturnType<typeof priceLines>>["lines"]>[number] & { purchaseOrderLineId?: string | null })[] = [];
+  const purchaseOrderId = String(formData.get("purchaseOrderId") ?? "");
+  const orderLines = purchaseOrderId
+    ? await prisma.purchaseOrderLine.findMany({ where: { orderId: purchaseOrderId, order: { businessId: business.id } }, select: { id: true } })
+    : [];
+  if (purchaseOrderId && orderLines.length === 0) return { error: "Purchase order not found" };
   const rawLines = formData.get("lines");
   if (typeof rawLines === "string" && rawLines !== "" && rawLines !== "[]") {
     const lineInput = parseJsonField(rawLines, linesSchema);
     if (lineInput.error) return { error: lineInput.error };
     const priced = await priceLines(business.id, lineInput.data!, "purchase", category?.id ?? keys.UNCATEGORISED_EXPENSE, true);
     if (priced.error) return { error: priced.error };
-    lineRows = priced.lines!;
+    lineRows = priced.lines!.map((l, i) => {
+      const poLineId = lineInput.data![i].poLineId;
+      return { ...l, purchaseOrderLineId: poLineId && orderLines.some((o) => o.id === poLineId) ? poLineId : null };
+    });
     const sums = totals(lineRows);
     amounts = { totalAmount: sums.total, vatAmount: sums.taxTotal };
   }
@@ -100,6 +108,7 @@ export async function createInvoice(_prev: ActionState, formData: FormData): Pro
       vatAmount: amounts.vatAmount,
       description: data.description,
       categoryAccountId: category?.id ?? null,
+      purchaseOrderId: purchaseOrderId || null,
       lines: { create: lineRows },
       ...fileFields,
     },
@@ -107,6 +116,7 @@ export async function createInvoice(_prev: ActionState, formData: FormData): Pro
 
   await postBill(invoice.id);
   await runAutoMatch(business.id);
+  await audit(business.id, "CREATE", "BILL", invoice.id, `Recorded bill ${invoice.invoiceNumber} from ${supplier.name} (${amounts.totalAmount.toFixed(2)})${purchaseOrderId ? " against a purchase order" : ""}`);
   revalidatePath("/app", "layout");
 
   const paymentId = formData.get("paymentId");
