@@ -14,6 +14,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     getActiveBusiness(session),
   ]);
   if (!user) redirect("/logout");
+  const flash = await readFlash();
 
   return (
     <DashboardShell
@@ -21,7 +22,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
       businesses={businesses.map((b) => ({ id: b.id, name: b.name }))}
       activeBusinessId={active?.id ?? null}
     >
-      <FlashBanner message={await readFlash()} />
+      <FlashBanner key={flash ?? "none"} message={flash} />
       {children}
     </DashboardShell>
   );
