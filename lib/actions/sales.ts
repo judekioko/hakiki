@@ -12,7 +12,8 @@ import { audit } from "@/lib/audit";
 import { settledAmount } from "@/lib/sales";
 import { accountIdsByKey, postReceipt, postSalesInvoice } from "@/lib/ledger";
 import { runReceiptAutoMatch } from "@/lib/receipt-match";
-import { nextDocumentNumber, priceLines, totals } from "@/lib/document-lines";
+import { nextDocumentNumber, priceLines, priceLinesFx, totals, totalsFx, type PricedLineFx } from "@/lib/document-lines";
+import { CURRENCIES } from "@/lib/currencies";
 import { sourceForMoneyAccount } from "@/lib/money-accounts";
 import {
   customerSchema,
@@ -93,9 +94,28 @@ export async function saveSalesInvoice(_prev: ActionState, formData: FormData): 
   if (lineInput.error) return { error: lineInput.error };
 
   const keys = await accountIdsByKey(business.id);
-  const priced = await priceLines(business.id, lineInput.data!, "sale", keys.SALES, business.vatRegistered);
+  // An invoice can be written in another currency. Prices are then entered in that currency and converted to the
+  // business currency at the rate given, which is what the books hold.
+  const currency = String(formData.get("currency") ?? "").trim().toUpperCase();
+  const foreign = !!currency && currency !== business.currency;
+  const rate = foreign ? Number(formData.get("exchangeRate")) : 1;
+  if (foreign && !CURRENCIES.some((c) => c.code === currency)) return { error: "Choose a currency from the list" };
+  if (foreign && (!Number.isFinite(rate) || rate <= 0)) {
+    return { error: `Enter the exchange rate: how many ${business.currency} one ${currency} is worth` };
+  }
+  const priced = foreign
+    ? await priceLinesFx(business.id, lineInput.data!, "sale", keys.SALES, business.vatRegistered, rate)
+    : await priceLines(business.id, lineInput.data!, "sale", keys.SALES, business.vatRegistered);
   if (priced.error) return { error: priced.error };
   const sums = totals(priced.lines!);
+  const fxSums = foreign ? totalsFx(priced.lines as PricedLineFx[]) : null;
+  const fxFields = {
+    currency: foreign ? currency : null,
+    exchangeRate: foreign ? rate : null,
+    foreignSubtotal: fxSums?.foreignSubtotal ?? null,
+    foreignTaxTotal: fxSums?.foreignTaxTotal ?? null,
+    foreignTotal: fxSums?.foreignTotal ?? null,
+  };
 
   let customerId = data.customerId
     ? (await prisma.customer.findFirst({ where: { id: data.customerId, businessId: business.id } }))?.id
@@ -117,6 +137,7 @@ export async function saveSalesInvoice(_prev: ActionState, formData: FormData): 
     reference: data.reference ?? null,
     notes: data.notes ?? null,
     ...sums,
+    ...fxFields,
   };
   const lineRows = priced.lines!.map((l) => ({ ...l }));
 

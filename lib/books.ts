@@ -48,6 +48,7 @@ export function defaultAccounts(countryCode: string): AccountSeed[] {
     { code: "6950", name: "Taxes & licences", type: "EXPENSE", key: "TAXES_LICENCES" },
     { code: "6990", name: "Uncategorised expense", type: "EXPENSE", key: "UNCATEGORISED_EXPENSE" },
     { code: "7000", name: "Interest expense", type: "EXPENSE", key: "INTEREST_EXPENSE" },
+    { code: "7100", name: "Exchange gains and losses", type: "EXPENSE", key: "FX_GAIN_LOSS" },
   ];
 }
 

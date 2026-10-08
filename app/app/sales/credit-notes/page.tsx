@@ -56,7 +56,7 @@ export default async function CreditNotesPage() {
                 </Td>
                 <Td>{n.customer.name}</Td>
                 <Td className="whitespace-nowrap">{formatDate(n.issueDate)}</Td>
-                <Td>{n.reason ?? "—"}</Td>
+                <Td>{n.isFx ? "Exchange difference" : (n.reason ?? "—")}</Td>
                 <Td className="whitespace-nowrap text-right">{fmt(state.total)}</Td>
                 <Td className="whitespace-nowrap text-right">{n.status === "ISSUED" ? fmt(state.unused) : "—"}</Td>
                 <Td>

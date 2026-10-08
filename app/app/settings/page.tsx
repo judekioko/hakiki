@@ -11,12 +11,16 @@ import { Badge } from "@/components/ui/badge";
 import { BusinessForm, SubmitButton } from "@/components/forms";
 import { TaxRateForm } from "@/components/module-forms";
 import { MONEY_KIND_LABEL } from "@/lib/money-accounts";
+import { deleteExchangeRate } from "@/lib/actions/exchange-rates";
+import { ExchangeRateForm } from "@/components/exchange-rate-form";
+import { formatDate, toDateInput } from "@/lib/format";
 
 export const metadata = { title: "Settings" };
 
 export default async function SettingsPage() {
   const { business } = await requireBusiness();
-  const [taxRates, moneyAccounts] = await Promise.all([
+  const [exchangeRates, taxRates, moneyAccounts] = await Promise.all([
+    prisma.exchangeRate.findMany({ where: { businessId: business.id }, orderBy: [{ date: "desc" }, { currency: "asc" }], take: 12 }),
     prisma.taxRate.findMany({ where: { businessId: business.id }, orderBy: [{ isArchived: "asc" }, { rate: "desc" }] }),
     prisma.account.findMany({ where: { businessId: business.id, moneyKind: { not: null } }, orderBy: { code: "asc" } }),
   ]);
@@ -89,6 +93,36 @@ export default async function SettingsPage() {
               </ul>
               <TaxRateForm />
               <p className="text-xs text-slate-500">{RATES_DISCLAIMER}</p>
+            </CardBody>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle>Exchange rates</CardTitle>
+            </CardHeader>
+            <CardBody className="space-y-4 text-sm">
+              <p className="text-slate-600">
+                Invoices and bills can be written in another currency. Save the usual rates here so they are filled in for you; each
+                document keeps the rate it was issued at.
+              </p>
+              {exchangeRates.length > 0 ? (
+                <ul className="divide-y divide-slate-100">
+                  {exchangeRates.map((r) => (
+                    <li key={r.id} className="flex items-center justify-between gap-3 py-2">
+                      <span>
+                        1 {r.currency} = {num(r.rate)} {business.currency} <span className="text-slate-400">· {formatDate(r.date)}</span>
+                      </span>
+                      <form action={deleteExchangeRate}>
+                        <input type="hidden" name="rateId" value={r.id} />
+                        <SubmitButton variant="ghost" size="sm" pendingText="...">
+                          Remove
+                        </SubmitButton>
+                      </form>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+              <ExchangeRateForm baseCurrency={business.currency} today={toDateInput(new Date())} />
             </CardBody>
           </Card>
 

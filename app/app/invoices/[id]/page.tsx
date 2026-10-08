@@ -3,7 +3,8 @@ import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { requireBusiness } from "@/lib/business";
 import { num, round2 } from "@/lib/money";
-import { formatDate } from "@/lib/format";
+import { formatDate, formatNumber, moneyFormatter } from "@/lib/format";
+import { settleBillExchangeDifference } from "@/lib/actions/fx";
 import { businessContext } from "@/lib/form-options";
 import { INVOICE_STATUS_LABEL, INVOICE_STATUS_TONE } from "@/lib/invoice-status";
 import { deleteInvoice, setInvoiceStatus } from "@/lib/actions/invoices";
@@ -30,6 +31,10 @@ export default async function InvoiceDetailPage({ params }: { params: Promise<{ 
       invoiceDate: true,
       totalAmount: true,
       vatAmount: true,
+      currency: true,
+      exchangeRate: true,
+      foreignTotalAmount: true,
+      foreignVatAmount: true,
       description: true,
       status: true,
       fileName: true,
@@ -46,6 +51,8 @@ export default async function InvoiceDetailPage({ params }: { params: Promise<{ 
   const matched = round2(invoice.allocations.reduce((s, a) => s + num(a.amount), 0));
   const credited = round2(invoice.creditAllocations.reduce((s, a) => s + num(a.amount), 0));
   const fileUrl = `/app/invoices/${invoice.id}/file`;
+  const dfmt = invoice.currency ? moneyFormatter(invoice.currency) : fmt;
+  const remaining = round2(total - matched - credited);
 
   return (
     <div className="space-y-6">
@@ -61,11 +68,16 @@ export default async function InvoiceDetailPage({ params }: { params: Promise<{ 
             <CardBody className="grid gap-4 sm:grid-cols-3">
               <div>
                 <p className="text-xs text-slate-500">Total incl. VAT</p>
-                <p className="text-lg font-semibold">{fmt(total)}</p>
+                <p className="text-lg font-semibold">{dfmt(invoice.currency && invoice.foreignTotalAmount !== null ? num(invoice.foreignTotalAmount) : total)}</p>
+                {invoice.currency && invoice.exchangeRate ? (
+                  <p className="text-xs text-slate-400">
+                    {fmt(total)} at 1 {invoice.currency} = {formatNumber(num(invoice.exchangeRate), 4)}
+                  </p>
+                ) : null}
               </div>
               <div>
                 <p className="text-xs text-slate-500">VAT</p>
-                <p className="text-lg font-semibold">{fmt(num(invoice.vatAmount))}</p>
+                <p className="text-lg font-semibold">{dfmt(invoice.currency && invoice.foreignVatAmount !== null ? num(invoice.foreignVatAmount) : num(invoice.vatAmount))}</p>
               </div>
               <div>
                 <p className="text-xs text-slate-500">Matched to payments</p>
@@ -127,9 +139,9 @@ export default async function InvoiceDetailPage({ params }: { params: Promise<{ 
                       <tr key={l.id} className="border-b border-slate-100">
                         <td className="py-1.5">{l.description}</td>
                         <td className="py-1.5 text-right">{num(l.quantity)}</td>
-                        <td className="py-1.5 text-right">{fmt(num(l.unitPrice))}</td>
+                        <td className="py-1.5 text-right">{dfmt(num(invoice.currency && l.foreignUnitPrice !== null ? l.foreignUnitPrice : l.unitPrice))}</td>
                         <td className="py-1.5 text-right">{num(l.taxRate)}%</td>
-                        <td className="py-1.5 text-right">{fmt(num(l.lineTotal))}</td>
+                        <td className="py-1.5 text-right">{dfmt(num(invoice.currency && l.foreignLineTotal !== null ? l.foreignLineTotal : l.lineTotal))}</td>
                       </tr>
                     ))}
                   </tbody>
@@ -217,6 +229,25 @@ export default async function InvoiceDetailPage({ params }: { params: Promise<{ 
         </div>
 
         <div className="space-y-6">
+          {invoice.currency && invoice.supplierId && matched > 0 && remaining > 0.01 ? (
+            <Card>
+              <CardHeader>
+                <CardTitle>Exchange difference</CardTitle>
+              </CardHeader>
+              <CardBody className="space-y-2 text-sm text-slate-600">
+                <p>
+                  This bill is in {invoice.currency}. If you have paid the supplier everything in {invoice.currency}, the {fmt(remaining)} still
+                  showing as owed is the exchange rate moving between the bill and your payments.
+                </p>
+                <form action={settleBillExchangeDifference}>
+                  <input type="hidden" name="billId" value={invoice.id} />
+                  <SubmitButton variant="secondary" size="sm" pendingText="Clearing...">
+                    Clear {fmt(remaining)} as exchange gain
+                  </SubmitButton>
+                </form>
+              </CardBody>
+            </Card>
+          ) : null}
           <Link
             href={`/app/supplier-credits/new?bill=${invoice.id}`}
             className="block rounded-md border border-slate-300 bg-white px-3 py-2 text-center text-sm font-medium text-slate-700 hover:bg-slate-50"

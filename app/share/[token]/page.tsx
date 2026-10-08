@@ -24,7 +24,7 @@ export default async function SharedDocumentPage({ params }: { params: Promise<{
   if (!business) notFound();
   const pack = countryPack(business.country);
   const money = (n: number) => formatMoney(n, business.currency);
-  const dp = currencyDigits(business.currency);
+  let docDp = currencyDigits(business.currency);
 
   let title = "";
   let number = "";
@@ -56,12 +56,27 @@ export default async function SharedDocumentPage({ params }: { params: Promise<{
     party = doc.customer;
     lines = doc.lines;
     notes = doc.notes;
-    totals = [{ label: "Subtotal", value: money(num(doc.subtotal)) }];
-    if (business.vatRegistered) totals.push({ label: pack.vatName, value: money(num(doc.taxTotal)) });
-    totals.push({ label: "Total", value: money(state.total), strong: true });
-    if (state.paid > 0) {
-      totals.push({ label: "Paid & credited", value: `-${money(state.paid)}` });
-      totals.push({ label: state.balance <= 0.01 ? "Paid in full" : "Balance due", value: money(Math.max(0, state.balance)), strong: true });
+    if (doc.currency && doc.foreignTotal !== null) {
+      // Foreign-currency invoice: the customer sees the amounts in that currency, plus the converted total.
+      const fm = (n: unknown) => formatMoney(num(n as never), doc.currency!);
+      lines = doc.lines.map((l) => ({ ...l, unitPrice: l.foreignUnitPrice ?? l.unitPrice, lineTotal: l.foreignLineTotal ?? l.lineTotal }));
+      docDp = currencyDigits(doc.currency);
+      totals = [{ label: "Subtotal", value: fm(doc.foreignSubtotal) }];
+      if (business.vatRegistered) totals.push({ label: pack.vatName, value: fm(doc.foreignTaxTotal) });
+      totals.push({ label: "Total", value: fm(doc.foreignTotal), strong: true });
+      totals.push({ label: `Rate 1 ${doc.currency} = ${formatNumber(num(doc.exchangeRate as never), 4)} ${business.currency}`, value: money(state.total) });
+      if (state.paid > 0) {
+        totals.push({ label: `Paid & credited (${business.currency})`, value: `-${money(state.paid)}` });
+        totals.push({ label: state.balance <= 0.01 ? "Paid in full" : `Balance due (${business.currency})`, value: money(Math.max(0, state.balance)), strong: true });
+      }
+    } else {
+      totals = [{ label: "Subtotal", value: money(num(doc.subtotal)) }];
+      if (business.vatRegistered) totals.push({ label: pack.vatName, value: money(num(doc.taxTotal)) });
+      totals.push({ label: "Total", value: money(state.total), strong: true });
+      if (state.paid > 0) {
+        totals.push({ label: "Paid & credited", value: `-${money(state.paid)}` });
+        totals.push({ label: state.balance <= 0.01 ? "Paid in full" : "Balance due", value: money(Math.max(0, state.balance)), strong: true });
+      }
     }
   } else if (link.kind === "quotation") {
     const doc = await prisma.quotation.findFirst({ where: { id: link.id, businessId: business.id, status: { not: "DRAFT" } }, include: { customer: true, lines: { orderBy: { position: "asc" } } } });
@@ -216,9 +231,9 @@ export default async function SharedDocumentPage({ params }: { params: Promise<{
                     <tr key={l.id} className="border-b border-slate-100">
                       <td className="py-2">{l.description}</td>
                       <td className="py-2 text-right">{formatNumber(num(l.quantity as never), num(l.quantity as never) % 1 ? 2 : 0)}</td>
-                      <td className="py-2 text-right">{formatNumber(num(l.unitPrice as never), dp)}</td>
+                      <td className="py-2 text-right">{formatNumber(num(l.unitPrice as never), docDp)}</td>
                       {business.vatRegistered ? <td className="py-2 text-right">{num(l.taxRate as never)}%</td> : null}
-                      <td className="py-2 text-right">{formatNumber(num(l.lineTotal as never), dp)}</td>
+                      <td className="py-2 text-right">{formatNumber(num(l.lineTotal as never), docDp)}</td>
                     </tr>
                   ))}
                 </tbody>

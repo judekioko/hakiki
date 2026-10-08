@@ -49,6 +49,11 @@ place, in the business's own currency.
 - **Sharing documents:** every sent invoice, quotation, issued credit note and customer statement has a signed link that
   opens a read-only, printable page for the customer (no login; expires after 120 days), with WhatsApp and email
   buttons. Set `SMTP_URL` and `MAIL_FROM` (and `APP_URL` behind a proxy) to also email documents straight from Hakiki.
+- **Foreign currencies:** invoices and supplier bills can be written in another currency (USD, EUR, GBP, CNY and the
+  African currencies) at a stated exchange rate, with saved rates under Settings. The customer sees the foreign amounts,
+  the books hold the converted amounts, and each document keeps its own rate. Money received and paid is recorded in the
+  business currency, and any leftover difference is cleared as an exchange gain or loss with one click. Not covered:
+  foreign-currency bank accounts and period-end revaluation of open balances.
 - **Purchases:** supplier bills (single total or line items), money paid out, suppliers, and the supplier tax-invoice
   check (eTIMS, EFRIS, EBM...) with WhatsApp requests for missing invoices.
 - **Statement import:** bank and mobile money CSVs. Money out becomes payments, money in becomes receipts. Columns are

@@ -11,7 +11,9 @@ import { findOrCreateSupplier } from "@/lib/suppliers";
 import { runAutoMatch } from "@/lib/auto-match";
 import { postBill, postPayment } from "@/lib/ledger";
 import { firstError, invoiceSchema, linesSchema, parseJsonField, taxIdFor } from "@/lib/validators";
-import { priceLines, totals } from "@/lib/document-lines";
+import { priceLines, priceLinesFx, totals, totalsFx, type PricedLineFx } from "@/lib/document-lines";
+import { CURRENCIES } from "@/lib/currencies";
+import { round2 } from "@/lib/money";
 import { accountIdsByKey } from "@/lib/ledger";
 import type { ActionState } from "./types";
 
@@ -45,7 +47,19 @@ export async function createInvoice(_prev: ActionState, formData: FormData): Pro
   const category = categoryValue
     ? await prisma.account.findFirst({ where: { id: categoryValue, businessId: business.id, moneyKind: null } })
     : null;
-  let amounts = { totalAmount: data.totalAmount, vatAmount: data.vatAmount };
+  // A bill can be in a foreign currency: it is entered in that currency and kept in the books in the business currency
+  // at the rate given.
+  const currency = String(formData.get("currency") ?? "").trim().toUpperCase();
+  const foreign = !!currency && currency !== business.currency;
+  const rate = foreign ? Number(formData.get("exchangeRate")) : 1;
+  if (foreign && !CURRENCIES.some((c) => c.code === currency)) return { error: "Choose a currency from the list" };
+  if (foreign && (!Number.isFinite(rate) || rate <= 0)) {
+    return { error: `Enter the exchange rate: how many ${business.currency} one ${currency} is worth` };
+  }
+  let amounts = foreign
+    ? { totalAmount: round2(data.totalAmount * rate), vatAmount: round2(data.vatAmount * rate) }
+    : { totalAmount: data.totalAmount, vatAmount: data.vatAmount };
+  let foreignAmounts = foreign ? { foreignTotalAmount: data.totalAmount, foreignVatAmount: data.vatAmount } : null;
   let lineRows: (NonNullable<Awaited<ReturnType<typeof priceLines>>["lines"]>[number] & { purchaseOrderLineId?: string | null })[] = [];
   const purchaseOrderId = String(formData.get("purchaseOrderId") ?? "");
   const orderLines = purchaseOrderId
@@ -56,7 +70,10 @@ export async function createInvoice(_prev: ActionState, formData: FormData): Pro
   if (typeof rawLines === "string" && rawLines !== "" && rawLines !== "[]") {
     const lineInput = parseJsonField(rawLines, linesSchema);
     if (lineInput.error) return { error: lineInput.error };
-    const priced = await priceLines(business.id, lineInput.data!, "purchase", category?.id ?? keys.UNCATEGORISED_EXPENSE, true);
+    const fallbackAccount = category?.id ?? keys.UNCATEGORISED_EXPENSE;
+    const priced = foreign
+      ? await priceLinesFx(business.id, lineInput.data!, "purchase", fallbackAccount, true, rate)
+      : await priceLines(business.id, lineInput.data!, "purchase", fallbackAccount, true);
     if (priced.error) return { error: priced.error };
     lineRows = priced.lines!.map((l, i) => {
       const poLineId = lineInput.data![i].poLineId;
@@ -64,6 +81,10 @@ export async function createInvoice(_prev: ActionState, formData: FormData): Pro
     });
     const sums = totals(lineRows);
     amounts = { totalAmount: sums.total, vatAmount: sums.taxTotal };
+    if (foreign) {
+      const fx = totalsFx(priced.lines as PricedLineFx[]);
+      foreignAmounts = { foreignTotalAmount: fx.foreignTotal, foreignVatAmount: fx.foreignTaxTotal };
+    }
   }
   if (amounts.totalAmount <= 0) return { error: "Enter the bill total or add lines" };
   if (amounts.vatAmount > amounts.totalAmount) return { error: "VAT cannot be more than the invoice total" };
@@ -110,6 +131,10 @@ export async function createInvoice(_prev: ActionState, formData: FormData): Pro
       description: data.description,
       categoryAccountId: category?.id ?? null,
       purchaseOrderId: purchaseOrderId || null,
+      currency: foreign ? currency : null,
+      exchangeRate: foreign ? rate : null,
+      foreignTotalAmount: foreignAmounts?.foreignTotalAmount ?? null,
+      foreignVatAmount: foreignAmounts?.foreignVatAmount ?? null,
       lines: { create: lineRows },
       ...fileFields,
     },

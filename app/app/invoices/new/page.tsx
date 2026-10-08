@@ -4,6 +4,7 @@ import { num } from "@/lib/money";
 import { toDateInput } from "@/lib/format";
 import { businessContext, categoryAccountOptions, itemOptions, taxRateOptions } from "@/lib/form-options";
 import { orderProgress } from "@/lib/purchase-orders";
+import { latestRates } from "@/lib/fx";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardBody } from "@/components/ui/card";
 import { InvoiceForm } from "@/components/forms";
@@ -14,11 +15,12 @@ export default async function NewBillPage({ searchParams }: { searchParams: Prom
   const { business } = await requireBusiness();
   const { po } = await searchParams;
   const ctx = businessContext(business);
-  const [suppliers, categories, items, taxRates] = await Promise.all([
+  const [suppliers, categories, items, taxRates, rates] = await Promise.all([
     prisma.supplier.findMany({ where: { businessId: business.id }, orderBy: { name: "asc" }, select: { id: true, name: true } }),
     categoryAccountOptions(business.id),
     itemOptions(business.id),
     taxRateOptions(business.id),
+    latestRates(business.id),
   ]);
 
   // Raising a bill from a purchase order: bill what has been received and not yet billed (or, if nothing has been
@@ -74,6 +76,8 @@ export default async function NewBillPage({ searchParams }: { searchParams: Prom
             items={items}
             taxRates={taxRates}
             allowLines
+            baseCurrency={business.currency}
+            rates={rates}
             purchaseOrderId={order?.id}
             initialLines={initialLines}
             defaults={

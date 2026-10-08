@@ -60,6 +60,44 @@ export async function priceLines(
   return { lines: priced };
 }
 
+export type PricedLineFx = PricedLine & {
+  foreignUnitPrice: number;
+  foreignLineTotal: number;
+  foreignTaxAmount: number;
+};
+
+// Prices entered in a foreign currency. Each line is priced and taxed in that currency first, so the customer sees
+// exact figures, then converted line by line to the business currency for the books.
+export async function priceLinesFx(
+  businessId: string,
+  lines: LineInput[],
+  side: "sale" | "purchase",
+  fallbackAccountId: string,
+  chargeTax: boolean,
+  rate: number
+): Promise<{ lines?: PricedLineFx[]; error?: string }> {
+  const foreign = await priceLines(businessId, lines, side, fallbackAccountId, chargeTax);
+  if (foreign.error) return { error: foreign.error };
+  return {
+    lines: foreign.lines!.map((l) => ({
+      ...l,
+      foreignUnitPrice: l.unitPrice,
+      foreignLineTotal: l.lineTotal,
+      foreignTaxAmount: l.taxAmount,
+      unitPrice: round2(l.unitPrice * rate),
+      lineTotal: round2(l.lineTotal * rate),
+      taxAmount: round2(l.taxAmount * rate),
+    })),
+  };
+}
+
+export function totalsFx(lines: PricedLineFx[]) {
+  const base = totals(lines);
+  const foreignSubtotal = round2(lines.reduce((s, l) => s + l.foreignLineTotal, 0));
+  const foreignTaxTotal = round2(lines.reduce((s, l) => s + l.foreignTaxAmount, 0));
+  return { ...base, foreignSubtotal, foreignTaxTotal, foreignTotal: round2(foreignSubtotal + foreignTaxTotal) };
+}
+
 export function totals(lines: PricedLine[]) {
   const subtotal = round2(lines.reduce((s, l) => s + l.lineTotal, 0));
   const taxTotal = round2(lines.reduce((s, l) => s + l.taxAmount, 0));
@@ -70,7 +108,7 @@ export async function nextDocumentNumber(businessId: string, prefix: string) {
   const where = { businessId, number: { startsWith: prefix } };
   const select = { number: true };
   const latest =
-    prefix === "CN-"
+    prefix === "CN-" || prefix === "FX-"
       ? await prisma.creditNote.findMany({ where, select })
       : prefix === "QUO-"
         ? await prisma.quotation.findMany({ where, select })

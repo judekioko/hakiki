@@ -200,6 +200,7 @@ model Business {
   goodsReceipts         GoodsReceipt[]
   supplierCredits       SupplierCredit[]
   paymentReminders      PaymentReminder[]
+  exchangeRates         ExchangeRate[]
 }
 
 model Membership {
@@ -386,6 +387,13 @@ model SalesInvoice {
   notes              String?
   // Number from the national e-invoicing system (eTIMS, EFRIS, EBM...) once the invoice is registered there.
   taxInvoiceNumber   String?
+  // Set when the document is in a currency other than the business's own. The amounts above are always in the
+  // business currency (that is what the books hold); these are the same amounts in the document's currency.
+  currency           String?
+  exchangeRate       Decimal?            @db.Decimal(18, 8)
+  foreignSubtotal    Decimal?            @db.Decimal(14, 2)
+  foreignTaxTotal    Decimal?            @db.Decimal(14, 2)
+  foreignTotal       Decimal?            @db.Decimal(14, 2)
   subtotal           Decimal             @default(0) @db.Decimal(14, 2)
   taxTotal           Decimal             @default(0) @db.Decimal(14, 2)
   total              Decimal             @default(0) @db.Decimal(14, 2)
@@ -406,21 +414,24 @@ model SalesInvoice {
 }
 
 model SalesInvoiceLine {
-  id          String       @id @default(cuid())
-  invoiceId   String
-  itemId      String?
-  description String
-  quantity    Decimal      @db.Decimal(14, 3)
-  unitPrice   Decimal      @db.Decimal(14, 2)
+  id               String       @id @default(cuid())
+  invoiceId        String
+  itemId           String?
+  description      String
+  quantity         Decimal      @db.Decimal(14, 3)
+  unitPrice        Decimal      @db.Decimal(14, 2)
   // Rate copied at the time of sale so later rate changes do not alter old invoices.
-  taxRate     Decimal      @default(0) @db.Decimal(6, 3)
-  taxRateId   String?
-  accountId   String
-  lineTotal   Decimal      @db.Decimal(14, 2)
-  taxAmount   Decimal      @db.Decimal(14, 2)
-  position    Int          @default(0)
-  invoice     SalesInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
-  item        Item?        @relation(fields: [itemId], references: [id], onDelete: SetNull)
+  taxRate          Decimal      @default(0) @db.Decimal(6, 3)
+  taxRateId        String?
+  accountId        String
+  lineTotal        Decimal      @db.Decimal(14, 2)
+  taxAmount        Decimal      @db.Decimal(14, 2)
+  position         Int          @default(0)
+  foreignUnitPrice Decimal?     @db.Decimal(14, 4)
+  foreignLineTotal Decimal?     @db.Decimal(14, 2)
+  foreignTaxAmount Decimal?     @db.Decimal(14, 2)
+  invoice          SalesInvoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  item             Item?        @relation(fields: [itemId], references: [id], onDelete: SetNull)
 }
 
 // Money received. Imported from statements (incoming rows) or entered by hand.
@@ -464,58 +475,66 @@ model ReceiptAllocation {
 
 // A supplier bill / tax invoice received. Named Invoice from the expense-checker version of the app.
 model Invoice {
-  id                String                     @id @default(cuid())
-  businessId        String
-  supplierId        String?
+  id                 String                     @id @default(cuid())
+  businessId         String
+  supplierId         String?
   // Tax invoice number as printed by the supplier's e-invoicing device (eTIMS CU number in Kenya).
-  invoiceNumber     String
-  supplierName      String
-  supplierPin       String?
-  invoiceDate       DateTime                   @db.Date
-  dueDate           DateTime?                  @db.Date
-  totalAmount       Decimal                    @db.Decimal(14, 2)
-  vatAmount         Decimal                    @default(0) @db.Decimal(14, 2)
-  description       String?
+  invoiceNumber      String
+  supplierName       String
+  supplierPin        String?
+  invoiceDate        DateTime                   @db.Date
+  dueDate            DateTime?                  @db.Date
+  totalAmount        Decimal                    @db.Decimal(14, 2)
+  vatAmount          Decimal                    @default(0) @db.Decimal(14, 2)
+  description        String?
   // Expense account used when the bill has no lines.
-  categoryAccountId String?
-  status            InvoiceStatus              @default(UNVERIFIED)
-  fileName          String?
-  fileType          String?
-  fileData          Bytes?
-  createdAt         DateTime                   @default(now())
-  business          Business                   @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  supplier          Supplier?                  @relation(fields: [supplierId], references: [id], onDelete: SetNull)
-  allocations       Allocation[]
-  lines             BillLine[]
+  categoryAccountId  String?
+  status             InvoiceStatus              @default(UNVERIFIED)
+  fileName           String?
+  fileType           String?
+  fileData           Bytes?
+  // Set when the bill is in a foreign currency; totalAmount and vatAmount are always in the business currency.
+  currency           String?
+  exchangeRate       Decimal?                   @db.Decimal(18, 8)
+  foreignTotalAmount Decimal?                   @db.Decimal(14, 2)
+  foreignVatAmount   Decimal?                   @db.Decimal(14, 2)
+  createdAt          DateTime                   @default(now())
+  business           Business                   @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  supplier           Supplier?                  @relation(fields: [supplierId], references: [id], onDelete: SetNull)
+  allocations        Allocation[]
+  lines              BillLine[]
   // An unpaid bill carried over from before Hakiki: it posts against opening balance equity, not an expense.
-  isOpening         Boolean                    @default(false)
+  isOpening          Boolean                    @default(false)
   // The purchase order this bill was raised from.
-  purchaseOrderId   String?
-  purchaseOrder     PurchaseOrder?             @relation(fields: [purchaseOrderId], references: [id], onDelete: SetNull)
-  supplierCredits   SupplierCredit[]
-  creditAllocations SupplierCreditAllocation[]
+  purchaseOrderId    String?
+  purchaseOrder      PurchaseOrder?             @relation(fields: [purchaseOrderId], references: [id], onDelete: SetNull)
+  supplierCredits    SupplierCredit[]
+  creditAllocations  SupplierCreditAllocation[]
 
   @@unique([businessId, invoiceNumber])
   @@index([businessId, invoiceDate])
 }
 
 model BillLine {
-  id                  String  @id @default(cuid())
+  id                  String   @id @default(cuid())
   invoiceId           String
   itemId              String?
   description         String
-  quantity            Decimal @db.Decimal(14, 3)
-  unitPrice           Decimal @db.Decimal(14, 2)
-  taxRate             Decimal @default(0) @db.Decimal(6, 3)
+  quantity            Decimal  @db.Decimal(14, 3)
+  unitPrice           Decimal  @db.Decimal(14, 2)
+  taxRate             Decimal  @default(0) @db.Decimal(6, 3)
   taxRateId           String?
   accountId           String
-  lineTotal           Decimal @db.Decimal(14, 2)
-  taxAmount           Decimal @db.Decimal(14, 2)
-  position            Int     @default(0)
+  lineTotal           Decimal  @db.Decimal(14, 2)
+  taxAmount           Decimal  @db.Decimal(14, 2)
+  position            Int      @default(0)
   // The purchase order line this bill line pays for, used to track what has been billed.
   purchaseOrderLineId String?
-  invoice             Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
-  item                Item?   @relation(fields: [itemId], references: [id], onDelete: SetNull)
+  foreignUnitPrice    Decimal? @db.Decimal(14, 4)
+  foreignLineTotal    Decimal? @db.Decimal(14, 2)
+  foreignTaxAmount    Decimal? @db.Decimal(14, 2)
+  invoice             Invoice  @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  item                Item?    @relation(fields: [itemId], references: [id], onDelete: SetNull)
 
   @@index([purchaseOrderLineId])
 }
@@ -678,6 +697,8 @@ model CreditNote {
   reason      String?
   // Put returned stock items back into stock at their current average cost.
   restock     Boolean            @default(false)
+  // An exchange gain or loss written off against a foreign-currency invoice, not a credit given to the customer.
+  isFx        Boolean            @default(false)
   subtotal    Decimal            @default(0) @db.Decimal(14, 2)
   taxTotal    Decimal            @default(0) @db.Decimal(14, 2)
   total       Decimal            @default(0) @db.Decimal(14, 2)
@@ -941,6 +962,8 @@ model SupplierCredit {
   reason      String?
   // Take returned stock items out of stock (otherwise the credit is a price adjustment).
   returnStock Boolean                    @default(false)
+  // An exchange gain written off against a foreign-currency bill, not a credit from the supplier.
+  isFx        Boolean                    @default(false)
   subtotal    Decimal                    @default(0) @db.Decimal(14, 2)
   taxTotal    Decimal                    @default(0) @db.Decimal(14, 2)
   total       Decimal                    @default(0) @db.Decimal(14, 2)
@@ -1005,4 +1028,21 @@ model PaymentReminder {
 
   @@index([businessId, createdAt])
   @@index([customerId, createdAt])
+}
+
+// ---------- Exchange rates ----------
+
+// What one unit of a foreign currency was worth in the business currency on a day. Used to prefill the rate on
+// foreign-currency invoices and bills; the rate actually used is stored on each document.
+model ExchangeRate {
+  id         String   @id @default(cuid())
+  businessId String
+  currency   String
+  rate       Decimal  @db.Decimal(18, 8)
+  date       DateTime @db.Date
+  createdAt  DateTime @default(now())
+  business   Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@unique([businessId, currency, date])
+  @@index([businessId, currency, date])
 }

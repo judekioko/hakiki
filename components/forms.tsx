@@ -10,6 +10,7 @@ import { createInvoice } from "@/lib/actions/invoices";
 import { createSupplier, updateSupplier } from "@/lib/actions/suppliers";
 import { autoMatchAction } from "@/lib/actions/matching";
 import { AccountSelect, Feedback, Field, SubmitButton, useFormAction, type AccountOption, type Option } from "./form-kit";
+import { foreignCurrencies } from "@/lib/currencies";
 import { LineItemsEditor, type EditorItem, type EditorLine, type EditorTaxRate } from "./line-items-editor";
 
 export { SubmitButton };
@@ -254,6 +255,8 @@ export function InvoiceForm({
   allowLines = false,
   purchaseOrderId,
   initialLines,
+  baseCurrency,
+  rates,
 }: {
   suppliers: Option[];
   defaults?: { supplierId?: string; supplierName?: string; amount?: number; date?: string; description?: string };
@@ -267,8 +270,12 @@ export function InvoiceForm({
   items?: EditorItem[];
   taxRates?: EditorTaxRate[];
   allowLines?: boolean;
+  baseCurrency?: string;
+  rates?: Record<string, number>;
 }) {
   const { state, onSubmit, pending } = useFormAction(createInvoice);
+  const [docCurrency, setDocCurrency] = useState("");
+  const [rate, setRate] = useState("");
   const [mode, setMode] = useState<"total" | "lines">(initialLines ? "lines" : "total");
   return (
     <form onSubmit={onSubmit} className="space-y-4">
@@ -306,6 +313,34 @@ export function InvoiceForm({
         </Field>
       </div>
 
+      {baseCurrency ? (
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="Bill currency" htmlFor="currency">
+            <Select
+              id="currency"
+              name="currency"
+              value={docCurrency}
+              onChange={(e) => {
+                setDocCurrency(e.target.value);
+                setRate(e.target.value && rates?.[e.target.value] ? String(rates[e.target.value]) : "");
+              }}
+            >
+              <option value="">{baseCurrency} (your business currency)</option>
+              {foreignCurrencies(baseCurrency).map((c) => (
+                <option key={c.code} value={c.code}>
+                  {c.code} · {c.name}
+                </option>
+              ))}
+            </Select>
+          </Field>
+          {docCurrency ? (
+            <Field label={`Exchange rate: 1 ${docCurrency} = ? ${baseCurrency}`} htmlFor="exchangeRate" hint="The amounts below are in the bill's currency.">
+              <Input id="exchangeRate" name="exchangeRate" type="number" step="any" min="0" value={rate} onChange={(e) => setRate(e.target.value)} required />
+            </Field>
+          ) : null}
+        </div>
+      ) : null}
+
       {allowLines ? (
         <div className="flex gap-2 text-sm">
           <button type="button" onClick={() => setMode("total")} className={mode === "total" ? "font-semibold text-teal-700" : "text-slate-500"}>
@@ -319,10 +354,10 @@ export function InvoiceForm({
       ) : null}
 
       {mode === "lines" && items && taxRates ? (
-        <LineItemsEditor side="purchase" items={items} taxRates={taxRates} accounts={categories} chargeTax initial={initialLines} />
+        <LineItemsEditor side="purchase" items={items} taxRates={taxRates} accounts={categories} chargeTax initial={initialLines} currency={docCurrency || baseCurrency || ""} />
       ) : (
         <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Total incl. VAT" htmlFor="totalAmount">
+          <Field label={docCurrency ? `Total incl. VAT (${docCurrency})` : "Total incl. VAT"} htmlFor="totalAmount">
             <Input id="totalAmount" name="totalAmount" type="number" step="0.01" min="0.01" defaultValue={defaults?.amount} required />
           </Field>
           <Field label="VAT included" htmlFor="vatAmount" hint="0 if the supplier is not VAT registered">

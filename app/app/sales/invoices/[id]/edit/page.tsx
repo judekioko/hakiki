@@ -4,6 +4,7 @@ import { requireBusiness } from "@/lib/business";
 import { num } from "@/lib/money";
 import { toDateInput } from "@/lib/format";
 import { categoryAccountOptions, itemOptions, taxRateOptions } from "@/lib/form-options";
+import { latestRates } from "@/lib/fx";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardBody } from "@/components/ui/card";
 import { SalesInvoiceForm } from "@/components/module-forms";
@@ -20,11 +21,12 @@ export default async function EditSalesInvoicePage({ params }: { params: Promise
   if (!invoice) notFound();
   if (invoice.status === "VOID" || invoice.isOpening) redirect(`/app/sales/invoices/${id}`);
 
-  const [customers, items, taxRates, accounts] = await Promise.all([
+  const [customers, items, taxRates, accounts, rates] = await Promise.all([
     prisma.customer.findMany({ where: { businessId: business.id }, orderBy: { name: "asc" }, select: { id: true, name: true } }),
     itemOptions(business.id),
     taxRateOptions(business.id),
     categoryAccountOptions(business.id),
+    latestRates(business.id),
   ]);
 
   return (
@@ -41,7 +43,10 @@ export default async function EditSalesInvoicePage({ params }: { params: Promise
             accounts={accounts}
             chargeTax={business.vatRegistered}
             currency={business.currency}
+            rates={rates}
             defaults={{
+              currency: invoice.currency,
+              exchangeRate: invoice.exchangeRate ? num(invoice.exchangeRate) : null,
               customerId: invoice.customerId,
               issueDate: toDateInput(invoice.issueDate),
               dueDate: toDateInput(invoice.dueDate),
@@ -51,7 +56,7 @@ export default async function EditSalesInvoicePage({ params }: { params: Promise
                 itemId: l.itemId ?? "",
                 description: l.description,
                 quantity: String(num(l.quantity)),
-                unitPrice: String(num(l.unitPrice)),
+                unitPrice: String(num(invoice.currency && l.foreignUnitPrice !== null ? l.foreignUnitPrice : l.unitPrice)),
                 taxRateId: l.taxRateId ?? "",
                 accountId: l.accountId,
               })),

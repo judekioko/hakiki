@@ -9,6 +9,7 @@ import { saveQuotation } from "@/lib/actions/quotations";
 import { saveRecurring } from "@/lib/actions/recurring";
 import { savePurchaseOrder } from "@/lib/actions/purchase-orders";
 import { saveSupplierCredit } from "@/lib/actions/supplier-credits";
+import { foreignCurrencies } from "@/lib/currencies";
 import { adjustStock, createItem, updateItem } from "@/lib/actions/items";
 import {
   createEmployee,
@@ -84,6 +85,7 @@ export function SalesInvoiceForm({
   accounts,
   chargeTax,
   currency,
+  rates,
   defaults,
 }: {
   invoiceId?: string;
@@ -94,7 +96,11 @@ export function SalesInvoiceForm({
   accounts: AccountOption[];
   chargeTax: boolean;
   currency: string;
+  // Saved exchange rates (business currency per one foreign unit), used to prefill the rate.
+  rates?: Record<string, number>;
   defaults: {
+    currency?: string | null;
+    exchangeRate?: number | null;
     customerId?: string;
     issueDate: string;
     dueDate: string;
@@ -104,6 +110,8 @@ export function SalesInvoiceForm({
   };
 }) {
   const { state, onSubmit, pending } = useFormAction(saveSalesInvoice);
+  const [docCurrency, setDocCurrency] = useState(defaults.currency ?? "");
+  const [rate, setRate] = useState(defaults.exchangeRate ? String(defaults.exchangeRate) : "");
   return (
     <form onSubmit={onSubmit} className="space-y-5">
       <Feedback state={state} />
@@ -129,6 +137,31 @@ export function SalesInvoiceForm({
           <Input id="dueDate" name="dueDate" type="date" defaultValue={defaults.dueDate} required />
         </Field>
       </div>
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <Field label="Invoice currency" htmlFor="currency">
+          <Select
+            id="currency"
+            name="currency"
+            value={docCurrency}
+            onChange={(e) => {
+              setDocCurrency(e.target.value);
+              setRate(e.target.value && rates?.[e.target.value] ? String(rates[e.target.value]) : "");
+            }}
+          >
+            <option value="">{currency} (your business currency)</option>
+            {foreignCurrencies(currency).map((c) => (
+              <option key={c.code} value={c.code}>
+                {c.code} · {c.name}
+              </option>
+            ))}
+          </Select>
+        </Field>
+        {docCurrency ? (
+          <Field label={`Exchange rate: 1 ${docCurrency} = ? ${currency}`} htmlFor="exchangeRate" hint="Today's rate. It is kept on the invoice.">
+            <Input id="exchangeRate" name="exchangeRate" type="number" step="any" min="0" value={rate} onChange={(e) => setRate(e.target.value)} required />
+          </Field>
+        ) : null}
+      </div>
       <LineItemsEditor
         side="sale"
         items={items}
@@ -136,7 +169,7 @@ export function SalesInvoiceForm({
         accounts={accounts}
         chargeTax={chargeTax}
         initial={defaults.lines}
-        currency={currency}
+        currency={docCurrency || currency}
       />
       <div className="grid gap-4 sm:grid-cols-2">
         <Field label="Reference / PO number (optional)" htmlFor="reference">

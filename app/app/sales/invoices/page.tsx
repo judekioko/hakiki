@@ -3,7 +3,7 @@ import { prisma } from "@/lib/prisma";
 import { requireBusiness } from "@/lib/business";
 import { runDueRecurring } from "@/lib/recurring";
 import { businessContext } from "@/lib/form-options";
-import { formatDate } from "@/lib/format";
+import { formatDate, formatMoney } from "@/lib/format";
 import { INVOICE_DISPLAY, invoiceState, type InvoiceDisplayStatus } from "@/lib/sales";
 import { PageHeader } from "@/components/page-header";
 import { Table, Tbody, Td, Th, Thead, Tr } from "@/components/ui/table";
@@ -77,7 +77,10 @@ export default async function SalesInvoicesPage({ searchParams }: { searchParams
                 <Td>{inv.customer.name}</Td>
                 <Td className="whitespace-nowrap">{formatDate(inv.issueDate)}</Td>
                 <Td className="whitespace-nowrap">{formatDate(inv.dueDate)}</Td>
-                <Td className="whitespace-nowrap text-right">{fmt(state.total)}</Td>
+                <Td className="whitespace-nowrap text-right">
+                  {fmt(state.total)}
+                  {inv.currency && inv.foreignTotal ? <span className="block text-xs text-slate-400">{formatMoney(Number(inv.foreignTotal), inv.currency)}</span> : null}
+                </Td>
                 <Td className="whitespace-nowrap text-right">{state.status === "VOID" ? "—" : fmt(state.balance)}</Td>
                 <Td>
                   <Badge tone={INVOICE_DISPLAY[state.status].tone}>{INVOICE_DISPLAY[state.status].label}</Badge>

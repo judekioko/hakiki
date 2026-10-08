@@ -3,9 +3,10 @@ import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { requireBusiness } from "@/lib/business";
 import { num } from "@/lib/money";
-import { currencyDigits, formatDate, formatNumber, toDateInput } from "@/lib/format";
+import { currencyDigits, formatDate, formatNumber, moneyFormatter, toDateInput } from "@/lib/format";
 import { businessContext, moneyAccountOptions } from "@/lib/form-options";
 import { INVOICE_DISPLAY, invoiceState } from "@/lib/sales";
+import { settleInvoiceExchangeDifference } from "@/lib/actions/fx";
 import {
   deleteDraftInvoice,
   markInvoiceSent,
@@ -43,7 +44,12 @@ export default async function SalesInvoicePage({ params }: { params: Promise<{ i
   const state = invoiceState(invoice);
   const moneyAccounts = await moneyAccountOptions(business.id);
   const display = INVOICE_DISPLAY[state.status];
-  const dp = currencyDigits(business.currency);
+  // A foreign-currency invoice shows the customer's amounts in that currency; the books (and the balance owing) are
+  // in the business currency at the rate stored on the invoice.
+  const docCurrency = invoice.currency ?? business.currency;
+  const dp = currencyDigits(docCurrency);
+  const dfmt = invoice.currency ? moneyFormatter(invoice.currency) : fmt;
+  const rate = invoice.exchangeRate ? num(invoice.exchangeRate) : null;
   const taxSystem = pack.taxInvoiceSystem;
 
   return (
@@ -137,9 +143,9 @@ export default async function SalesInvoicePage({ params }: { params: Promise<{ i
                 <tr key={l.id} className="border-b border-slate-100">
                   <td className="py-2">{l.description}</td>
                   <td className="py-2 text-right">{formatNumber(num(l.quantity), num(l.quantity) % 1 ? 2 : 0)}</td>
-                  <td className="py-2 text-right">{formatNumber(num(l.unitPrice), dp)}</td>
+                  <td className="py-2 text-right">{formatNumber(num(invoice.currency && l.foreignUnitPrice !== null ? l.foreignUnitPrice : l.unitPrice), dp)}</td>
                   {business.vatRegistered ? <td className="py-2 text-right">{num(l.taxRate)}%</td> : null}
-                  <td className="py-2 text-right">{formatNumber(num(l.lineTotal), dp)}</td>
+                  <td className="py-2 text-right">{formatNumber(num(invoice.currency && l.foreignLineTotal !== null ? l.foreignLineTotal : l.lineTotal), dp)}</td>
                 </tr>
               ))}
             </tbody>
@@ -148,26 +154,34 @@ export default async function SalesInvoicePage({ params }: { params: Promise<{ i
           <dl className="ml-auto mt-4 w-full max-w-xs space-y-1 text-sm">
             <div className="flex justify-between">
               <dt className="text-slate-500">Subtotal</dt>
-              <dd>{fmt(num(invoice.subtotal))}</dd>
+              <dd>{dfmt(num(invoice.currency && invoice.foreignSubtotal !== null ? invoice.foreignSubtotal : invoice.subtotal))}</dd>
             </div>
             {business.vatRegistered ? (
               <div className="flex justify-between">
                 <dt className="text-slate-500">{pack.vatName}</dt>
-                <dd>{fmt(num(invoice.taxTotal))}</dd>
+                <dd>{dfmt(num(invoice.currency && invoice.foreignTaxTotal !== null ? invoice.foreignTaxTotal : invoice.taxTotal))}</dd>
               </div>
             ) : null}
             <div className="flex justify-between border-t border-slate-300 pt-1 text-base font-bold">
               <dt>Total</dt>
-              <dd>{fmt(state.total)}</dd>
+              <dd>{dfmt(num(invoice.currency && invoice.foreignTotal !== null ? invoice.foreignTotal : state.total))}</dd>
             </div>
+            {invoice.currency && rate ? (
+              <div className="flex justify-between text-xs text-slate-500">
+                <dt>
+                  Rate 1 {invoice.currency} = {formatNumber(rate, 4)} {business.currency}
+                </dt>
+                <dd>{fmt(state.total)}</dd>
+              </div>
+            ) : null}
             {state.paid > 0 ? (
               <>
                 <div className="flex justify-between text-slate-600">
-                  <dt>{invoice.creditAllocations.length > 0 ? "Paid & credited" : "Paid"}</dt>
+                  <dt>{(invoice.creditAllocations.length > 0 ? "Paid & credited" : "Paid") + (invoice.currency ? ` (${business.currency})` : "")}</dt>
                   <dd>-{fmt(state.paid)}</dd>
                 </div>
                 <div className="flex justify-between font-semibold">
-                  <dt>Balance due</dt>
+                  <dt>{invoice.currency ? `Balance due (${business.currency})` : "Balance due"}</dt>
                   <dd>{fmt(state.balance)}</dd>
                 </div>
               </>
@@ -206,6 +220,26 @@ export default async function SalesInvoicePage({ params }: { params: Promise<{ i
                   defaultAmount={state.balance}
                   defaultPayer={invoice.customer.name}
                 />
+              </CardBody>
+            </Card>
+          ) : null}
+
+          {invoice.currency && invoice.status === "SENT" && state.paid > 0 && state.balance > 0.01 ? (
+            <Card>
+              <CardHeader>
+                <CardTitle>Exchange difference</CardTitle>
+              </CardHeader>
+              <CardBody className="space-y-2 text-sm text-slate-600">
+                <p>
+                  This invoice is in {invoice.currency}. If the customer has paid everything they owe in {invoice.currency}, the{" "}
+                  {fmt(state.balance)} still showing is the exchange rate moving between the invoice and the payment.
+                </p>
+                <form action={settleInvoiceExchangeDifference}>
+                  <input type="hidden" name="invoiceId" value={invoice.id} />
+                  <SubmitButton variant="secondary" size="sm" pendingText="Writing off...">
+                    Write off {fmt(state.balance)} as exchange loss
+                  </SubmitButton>
+                </form>
               </CardBody>
             </Card>
           ) : null}

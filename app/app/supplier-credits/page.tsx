@@ -56,7 +56,7 @@ export default async function SupplierCreditsPage() {
                 </Td>
                 <Td>{c.supplier.name}</Td>
                 <Td className="whitespace-nowrap">{formatDate(c.creditDate)}</Td>
-                <Td>{c.reason ?? "—"}</Td>
+                <Td>{c.isFx ? "Exchange difference" : (c.reason ?? "—")}</Td>
                 <Td className="whitespace-nowrap text-right">{fmt(state.total)}</Td>
                 <Td className="whitespace-nowrap text-right">{c.status === "ISSUED" ? fmt(state.unused) : "—"}</Td>
                 <Td>
