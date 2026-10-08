@@ -9,6 +9,7 @@ import { QUOTE_DISPLAY, quoteStatus } from "@/lib/quotations";
 import { convertQuotation, deleteQuotation, setQuotationStatus } from "@/lib/actions/quotations";
 import { Badge } from "@/components/ui/badge";
 import { LinkButton } from "@/components/bits";
+import { ShareCard } from "@/components/share-card";
 import { PrintButton } from "@/components/print-button";
 import { SubmitButton } from "@/components/forms";
 
@@ -158,6 +159,12 @@ export default async function QuotationPage({ params }: { params: Promise<{ id: 
           <p className="mt-6 border-t border-slate-200 pt-4 text-sm text-slate-600">{business.invoiceFooter}</p>
         ) : null}
       </article>
+
+      {quote.status !== "DRAFT" ? (
+        <div className="max-w-md">
+          <ShareCard kind="quotation" id={quote.id} business={business} customer={quote.customer} number={quote.number} amount={num(quote.total)} />
+        </div>
+      ) : null}
 
       {quote.status !== "INVOICED" ? (
         <form action={deleteQuotation} className="print:hidden">

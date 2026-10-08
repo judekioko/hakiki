@@ -17,6 +17,7 @@ import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { LinkButton } from "@/components/bits";
+import { ShareCard } from "@/components/share-card";
 import { PrintButton } from "@/components/print-button";
 import { SubmitButton } from "@/components/forms";
 import { ReceiptForm } from "@/components/module-forms";
@@ -180,6 +181,17 @@ export default async function SalesInvoicePage({ params }: { params: Promise<{ i
         </article>
 
         <aside className="space-y-6 print:hidden">
+          {invoice.status !== "DRAFT" ? (
+            <ShareCard
+              kind="invoice"
+              id={invoice.id}
+              business={business}
+              customer={invoice.customer}
+              number={invoice.number}
+              amount={state.total}
+              dueDate={invoice.dueDate}
+            />
+          ) : null}
           {invoice.status === "SENT" && state.balance > 0.01 ? (
             <Card>
               <CardHeader>

@@ -46,6 +46,9 @@ place, in the business's own currency.
   documents that credit opening balance equity instead of sales or expenses, and opening stock through stock counts.
 - **Cash flow statement:** where cash came from and went to in any period (operating, investing, financing), built from
   the same ledger lines as everything else, reconciling to the change in your bank, mobile money and cash balances.
+- **Sharing documents:** every sent invoice, quotation, issued credit note and customer statement has a signed link that
+  opens a read-only, printable page for the customer (no login; expires after 120 days), with WhatsApp and email
+  buttons. Set `SMTP_URL` and `MAIL_FROM` (and `APP_URL` behind a proxy) to also email documents straight from Hakiki.
 - **Purchases:** supplier bills (single total or line items), money paid out, suppliers, and the supplier tax-invoice
   check (eTIMS, EFRIS, EBM...) with WhatsApp requests for missing invoices.
 - **Statement import:** bank and mobile money CSVs. Money out becomes payments, money in becomes receipts. Columns are

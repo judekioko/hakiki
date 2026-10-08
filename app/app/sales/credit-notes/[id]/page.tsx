@@ -18,6 +18,7 @@ import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Select } from "@/components/ui/select";
 import { LinkButton } from "@/components/bits";
+import { ShareCard } from "@/components/share-card";
 import { PrintButton } from "@/components/print-button";
 import { SubmitButton } from "@/components/forms";
 
@@ -163,6 +164,9 @@ export default async function CreditNotePage({ params }: { params: Promise<{ id:
         </article>
 
         <aside className="space-y-6 print:hidden">
+          {note.status === "ISSUED" ? (
+            <ShareCard kind="credit-note" id={note.id} business={business} customer={note.customer} number={note.number} amount={state.total} />
+          ) : null}
           {state.unused > 0.01 && openInvoices.length > 0 ? (
             <Card>
               <CardHeader>

@@ -10,6 +10,7 @@ import { customerStatement, openInvoicesFor } from "@/lib/statements";
 import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { PrintButton } from "@/components/print-button";
+import { ShareCard } from "@/components/share-card";
 
 export const metadata = { title: "Customer statement" };
 
@@ -125,6 +126,10 @@ export default async function StatementPage({
             ))}
           </div>
         </form>
+      </div>
+
+      <div className="max-w-md">
+        <ShareCard kind="statement" id={customer.id} business={business} customer={customer} amount={statement.closing} />
       </div>
 
       <article className="max-w-3xl rounded-lg border border-slate-200 bg-white p-6 sm:p-8 print:max-w-none print:border-0 print:p-0">
