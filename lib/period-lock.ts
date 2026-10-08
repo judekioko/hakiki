@@ -1,6 +1,7 @@
 import "server-only";
 import { prisma } from "./prisma";
 import { formatDate } from "./format";
+import type { JournalSource } from "./generated/prisma/client";
 
 // "Closing the books": once a business is locked through a date, nothing dated on or before it can be added,
 // changed or removed. The ledger enforces this for every entry (lib/ledger.ts); actions check it first so the
@@ -58,23 +59,43 @@ async function documentDate(kind: LockableDocument, id: string): Promise<Date | 
   }
 }
 
-// Checks the stored date of an existing document, plus any new date it is about to move to.
-export async function assertDocumentOpen(
-  business: Lockable,
-  kind: LockableDocument,
-  id: string,
-  ...newDates: (Date | null | undefined)[]
-) {
-  if (!business.lockedThrough) return;
-  assertOpen(business, await documentDate(kind, id), ...newDates);
+const SOURCE_FOR: Record<LockableDocument, JournalSource> = {
+  payment: "PAYMENT",
+  receipt: "RECEIPT",
+  salesInvoice: "SALES_INVOICE",
+  bill: "BILL",
+  creditNote: "CREDIT_NOTE",
+  payRun: "PAYRUN",
+};
+
+// A line cleared in a completed bank reconciliation must not change under it.
+export async function reconciledMessage(sourceType: JournalSource, sourceId: string): Promise<string | null> {
+  const line = await prisma.journalLine.findFirst({
+    where: { entry: { sourceType, sourceId }, reconciliation: { status: "COMPLETED" } },
+    select: { reconciliation: { select: { statementDate: true, account: { select: { name: true } } } } },
+  });
+  if (!line?.reconciliation) return null;
+  return `This was cleared in the ${line.reconciliation.account.name} reconciliation for ${formatDate(line.reconciliation.statementDate)}. Undo that reconciliation first (Accounting → Bank reconciliation).`;
 }
 
+// Why an existing document cannot be changed (closed period or already reconciled), or null if it can.
+// Also checks any new date the document is about to move to.
 export async function documentLockMessage(
   business: Lockable,
   kind: LockableDocument,
   id: string,
   ...newDates: (Date | null | undefined)[]
 ): Promise<string | null> {
-  if (!business.lockedThrough) return null;
-  return lockMessage(business, await documentDate(kind, id), ...newDates);
+  const closed = business.lockedThrough ? lockMessage(business, await documentDate(kind, id), ...newDates) : null;
+  return closed ?? (await reconciledMessage(SOURCE_FOR[kind], id));
+}
+
+export async function assertDocumentOpen(
+  business: Lockable,
+  kind: LockableDocument,
+  id: string,
+  ...newDates: (Date | null | undefined)[]
+) {
+  const message = await documentLockMessage(business, kind, id, ...newDates);
+  if (message) throw new PeriodLockedError(message);
 }

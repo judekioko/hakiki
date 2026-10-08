@@ -15,6 +15,7 @@ export const AUDIT_ENTITIES: Record<string, string> = {
   PAY_RUN: "Pay run",
   CUSTOMER: "Customer",
   PERIOD_LOCK: "Closed books",
+  RECONCILIATION: "Reconciliation",
 };
 
 // Appends a line to the business's audit trail, attributed to the signed-in user.

@@ -19,6 +19,9 @@ place, in the business's own currency.
 - **Closing the books:** lock everything up to a date (Accounting → Close the books). Documents, journals, stock
   adjustments and pay runs dated in a closed period cannot be added, edited, voided or deleted, statement imports skip
   closed-period rows, and the ledger itself refuses the write (`lib/period-lock.ts`). Only owners can reopen.
+- **Bank reconciliation:** for each bank, mobile money or cash account, enter a statement's closing date and balance, tick
+  off the ledger lines that appear on it, and finish once the difference is zero. Cleared lines are protected from
+  edits, voids and deletes until the reconciliation is undone (`lib/reconcile.ts`).
 - **Purchases:** supplier bills (single total or line items), money paid out, suppliers, and the supplier tax-invoice
   check (eTIMS, EFRIS, EBM...) with WhatsApp requests for missing invoices.
 - **Statement import:** bank and mobile money CSVs. Money out becomes payments, money in becomes receipts. Columns are

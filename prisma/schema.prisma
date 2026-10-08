@@ -84,6 +84,11 @@ enum CreditNoteStatus {
   VOID
 }
 
+enum ReconciliationStatus {
+  IN_PROGRESS
+  COMPLETED
+}
+
 enum PayrollParty {
   EMPLOYEE
   EMPLOYER
@@ -104,29 +109,29 @@ model User {
 }
 
 model Business {
-  id                    String          @id @default(cuid())
+  id                    String           @id @default(cuid())
   name                  String
   // Tax identification number (KRA PIN in Kenya, TIN elsewhere). Column name kept from the Kenya-only version.
   kraPin                String?
   // ISO country code; drives currency, tax defaults and wording (see lib/countries.ts).
-  country               String          @default("KE")
-  currency              String          @default("KES")
-  vatRegistered         Boolean         @default(true)
+  country               String           @default("KE")
+  currency              String           @default("KES")
+  vatRegistered         Boolean          @default(true)
   address               String?
   phone                 String?
   email                 String?
   invoiceFooter         String?
   // Income tax rate applied to unbacked expenses when estimating tax at risk (30% for Kenyan companies).
-  incomeTaxRate         Decimal         @default(30) @db.Decimal(5, 2)
+  incomeTaxRate         Decimal          @default(30) @db.Decimal(5, 2)
   // Last month of the financial year (12 = December year end).
-  yearEndMonth          Int             @default(12)
+  yearEndMonth          Int              @default(12)
   // Monthly personal relief for the configurable payroll engine (countries without a built-in one).
-  payrollPersonalRelief Decimal         @default(0) @db.Decimal(14, 2)
+  payrollPersonalRelief Decimal          @default(0) @db.Decimal(14, 2)
   // Set once the default chart of accounts and tax rates have been created.
   booksReadyAt          DateTime?
   // Books are closed through this date (inclusive): nothing dated on or before it can be added, changed or removed.
-  lockedThrough         DateTime?       @db.Date
-  createdAt             DateTime        @default(now())
+  lockedThrough         DateTime?        @db.Date
+  createdAt             DateTime         @default(now())
   memberships           Membership[]
   suppliers             Supplier[]
   invoices              Invoice[]
@@ -146,6 +151,7 @@ model Business {
   payRuns               PayRun[]
   creditNotes           CreditNote[]
   auditLogs             AuditLog[]
+  reconciliations       Reconciliation[]
 }
 
 model Membership {
@@ -163,19 +169,20 @@ model Membership {
 // ---------- Ledger ----------
 
 model Account {
-  id          String        @id @default(cuid())
-  businessId  String
-  code        String
-  name        String
-  type        AccountType
+  id              String           @id @default(cuid())
+  businessId      String
+  code            String
+  name            String
+  type            AccountType
   // Stable key for accounts the app posts to automatically, e.g. "AR", "AP", "VAT_OUT". Null for user accounts.
-  systemKey   String?
-  moneyKind   MoneyKind?
-  description String?
-  isArchived  Boolean       @default(false)
-  createdAt   DateTime      @default(now())
-  business    Business      @relation(fields: [businessId], references: [id], onDelete: Cascade)
-  lines       JournalLine[]
+  systemKey       String?
+  moneyKind       MoneyKind?
+  description     String?
+  isArchived      Boolean          @default(false)
+  createdAt       DateTime         @default(now())
+  business        Business         @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  lines           JournalLine[]
+  reconciliations Reconciliation[]
 
   @@unique([businessId, code])
   @@unique([businessId, systemKey])
@@ -207,7 +214,12 @@ model JournalLine {
   entry       JournalEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
   account     Account      @relation(fields: [accountId], references: [id], onDelete: Cascade)
 
+  // Set when this line has been ticked off against a bank, mobile money or cash statement.
+  reconciliationId String?
+  reconciliation   Reconciliation? @relation(fields: [reconciliationId], references: [id], onDelete: SetNull)
+
   @@index([accountId])
+  @@index([reconciliationId])
 }
 
 model TaxRate {
@@ -654,4 +666,27 @@ model AuditLog {
 
   @@index([businessId, createdAt])
   @@index([businessId, entityType, entityId])
+}
+
+// ---------- Bank reconciliation ----------
+
+// One pass of ticking a money account's ledger lines off against a statement. Lines cleared in a completed
+// reconciliation are protected from change until it is undone.
+model Reconciliation {
+  id               String               @id @default(cuid())
+  businessId       String
+  accountId        String
+  statementDate    DateTime             @db.Date
+  statementBalance Decimal              @db.Decimal(16, 2)
+  // Cleared balance carried over from the previous completed reconciliation of this account.
+  openingBalance   Decimal              @default(0) @db.Decimal(16, 2)
+  status           ReconciliationStatus @default(IN_PROGRESS)
+  completedAt      DateTime?
+  completedBy      String?
+  createdAt        DateTime             @default(now())
+  business         Business             @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  account          Account              @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  lines            JournalLine[]
+
+  @@index([businessId, accountId, statementDate])
 }

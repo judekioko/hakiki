@@ -2,7 +2,7 @@ import "server-only";
 import { prisma } from "./prisma";
 import { num, round2 } from "./money";
 import { averageCost } from "./inventory";
-import { assertOpen } from "./period-lock";
+import { PeriodLockedError, assertOpen, reconciledMessage } from "./period-lock";
 import type { ExemptReason, JournalSource, PaymentSource } from "./generated/prisma/client";
 
 // Every document (sales invoice, bill, payment...) owns at most one journal entry.
@@ -19,7 +19,10 @@ export async function accountIdsByKey(businessId: string): Promise<Record<string
 }
 
 // Last line of defence for closed periods: no entry dated in one can be written, rewritten or deleted.
+// It also protects lines already cleared in a completed bank reconciliation.
 async function assertEntriesOpen(businessId: string, sourceType: JournalSource, sourceId: string, newDate?: Date) {
+  const reconciled = await reconciledMessage(sourceType, sourceId);
+  if (reconciled) throw new PeriodLockedError(reconciled);
   const business = await prisma.business.findUnique({ where: { id: businessId }, select: { lockedThrough: true } });
   if (!business?.lockedThrough) return;
   const existing = await prisma.journalEntry.findMany({ where: { sourceType, sourceId }, select: { date: true } });
