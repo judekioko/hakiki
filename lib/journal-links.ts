@@ -36,4 +36,5 @@ export const SOURCE_LABEL: Record<JournalSource, string> = {
   CREDIT_NOTE: "Credit note",
   SUPPLIER_CREDIT: "Supplier credit",
   OPENING_BALANCE: "Opening balances",
+  GOODS_RECEIPT: "Goods received",
 };

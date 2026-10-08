@@ -40,7 +40,7 @@ export function assertOpen(business: Lockable, ...dates: (Date | null | undefine
   if (message) throw new PeriodLockedError(message);
 }
 
-export type LockableDocument = "payment" | "receipt" | "salesInvoice" | "bill" | "creditNote" | "supplierCredit" | "payRun";
+export type LockableDocument = "payment" | "receipt" | "salesInvoice" | "bill" | "creditNote" | "supplierCredit" | "goodsReceipt" | "payRun";
 
 async function documentDate(kind: LockableDocument, id: string): Promise<Date | null> {
   switch (kind) {
@@ -56,6 +56,8 @@ async function documentDate(kind: LockableDocument, id: string): Promise<Date | 
       return (await prisma.creditNote.findUnique({ where: { id }, select: { issueDate: true } }))?.issueDate ?? null;
     case "supplierCredit":
       return (await prisma.supplierCredit.findUnique({ where: { id }, select: { creditDate: true } }))?.creditDate ?? null;
+    case "goodsReceipt":
+      return (await prisma.goodsReceipt.findUnique({ where: { id }, select: { receivedDate: true } }))?.receivedDate ?? null;
     case "payRun":
       return (await prisma.payRun.findUnique({ where: { id }, select: { payDate: true } }))?.payDate ?? null;
   }
@@ -68,6 +70,7 @@ const SOURCE_FOR: Record<LockableDocument, JournalSource> = {
   bill: "BILL",
   creditNote: "CREDIT_NOTE",
   supplierCredit: "SUPPLIER_CREDIT",
+  goodsReceipt: "GOODS_RECEIPT",
   payRun: "PAYRUN",
 };
 

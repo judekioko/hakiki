@@ -9,7 +9,10 @@ import { num } from "@/lib/money";
 import { audit } from "@/lib/audit";
 import { accountIdsByKey } from "@/lib/ledger";
 import { nextDocumentNumber, priceLines, totals } from "@/lib/document-lines";
-import { orderProgress } from "@/lib/purchase-orders";
+import { orderProgress, orderUsesAccrual } from "@/lib/purchase-orders";
+import { postGoodsReceipt } from "@/lib/ledger";
+import { lockMessage } from "@/lib/period-lock";
+import { blockedByLock } from "@/lib/lock-guard";
 import { firstError, linesSchema, parseJsonField, purchaseOrderSchema } from "@/lib/validators";
 import type { ActionState } from "./types";
 
@@ -144,6 +147,9 @@ export async function recordGoodsReceipt(_prev: ActionState, formData: FormData)
   if (input.error) return { error: input.error };
   const quantities = input.data!.filter((l) => l.quantity > 0);
   if (quantities.length === 0) return { error: "Enter the quantity received for at least one line" };
+  const receivedAt = new Date(`${date}T00:00:00Z`);
+  const locked = lockMessage(business, receivedAt);
+  if (locked) return { error: locked };
 
   const { progress } = await orderProgress(order.id);
   for (const q of quantities) {
@@ -154,16 +160,19 @@ export async function recordGoodsReceipt(_prev: ActionState, formData: FormData)
     }
   }
 
+  const accrued = await orderUsesAccrual(order.id);
   const receipt = await prisma.goodsReceipt.create({
     data: {
       businessId: business.id,
       orderId: order.id,
       number: await nextDocumentNumber(business.id, "GRN-"),
-      receivedDate: new Date(`${date}T00:00:00Z`),
+      receivedDate: receivedAt,
+      accrued,
       note: String(formData.get("note") ?? "").trim() || null,
       lines: { create: quantities.map((q) => ({ orderLineId: q.lineId, quantity: q.quantity })) },
     },
   });
+  await postGoodsReceipt(receipt.id);
   await audit(business.id, "CREATE", "GOODS_RECEIPT", receipt.id, `Recorded goods received ${receipt.number} against ${order.number}`);
   revalidateAll();
   return { success: `Recorded ${receipt.number}` };
@@ -176,7 +185,9 @@ export async function deleteGoodsReceipt(formData: FormData) {
     include: { order: { select: { number: true } } },
   });
   if (!receipt) return;
+  if (receipt.accrued && (await blockedByLock(business, "goodsReceipt", receipt.id))) return;
   await prisma.goodsReceipt.delete({ where: { id: receipt.id } });
+  await postGoodsReceipt(receipt.id);
   await audit(business.id, "DELETE", "GOODS_RECEIPT", receipt.id, `Deleted goods received ${receipt.number} from ${receipt.order.number}`);
   revalidateAll();
 }

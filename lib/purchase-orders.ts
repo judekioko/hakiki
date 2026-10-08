@@ -23,7 +23,7 @@ export async function orderProgress(orderId: string) {
     prisma.purchaseOrderLine.findMany({
       where: { orderId },
       orderBy: { position: "asc" },
-      include: { received: { select: { quantity: true } } },
+      include: { received: { select: { quantity: true } }, item: { select: { kind: true } } },
     }),
     prisma.billLine.groupBy({
       by: ["purchaseOrderLineId"],
@@ -77,4 +77,15 @@ export async function orderSummaries(businessId: string) {
     }));
     return { order, progress, status: displayStatus(order.status, progress) };
   });
+}
+
+// Whether this order books stock when goods arrive (and its bills clear "Goods received not invoiced"). Orders that
+// were already received or billed under the earlier method, where the bill added the stock, carry on that way, so
+// nothing is counted twice.
+export async function orderUsesAccrual(orderId: string): Promise<boolean> {
+  const [legacyReceipts, legacyBills] = await Promise.all([
+    prisma.goodsReceipt.count({ where: { orderId, accrued: false } }),
+    prisma.invoice.count({ where: { purchaseOrderId: orderId, usesGrni: false } }),
+  ]);
+  return legacyReceipts + legacyBills === 0;
 }

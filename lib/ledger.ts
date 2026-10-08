@@ -3,6 +3,8 @@ import { prisma } from "./prisma";
 import { num, round2 } from "./money";
 import { averageCost } from "./inventory";
 import { PeriodLockedError, assertOpen, reconciledMessage } from "./period-lock";
+import { orderLineValue } from "./grni";
+import { ensureSystemAccount } from "./fx";
 import type { ExemptReason, JournalSource, PaymentSource } from "./generated/prisma/client";
 
 // Every document (sales invoice, bill, payment...) owns at most one journal entry.
@@ -147,6 +149,15 @@ export async function postBill(invoiceId: string) {
 
   await prisma.stockMovement.deleteMany({ where: { sourceType: "BILL", sourceId: bill.id } });
 
+  // Bills raised from a purchase order clear what was booked when the goods arrived (see postGoodsReceipt).
+  const orderLines = bill.usesGrni
+    ? await prisma.purchaseOrderLine.findMany({
+        where: { id: { in: bill.lines.map((l) => l.purchaseOrderLineId).filter((id): id is string => !!id) } },
+      })
+    : [];
+  const grniId = orderLines.length > 0 ? await ensureSystemAccount(bill.businessId, "GRNI") : null;
+  const varianceId = orderLines.length > 0 ? await ensureSystemAccount(bill.businessId, "PURCHASE_VARIANCE") : null;
+
   if (bill.lines.length === 0) {
     const vat = claimVat ? num(bill.vatAmount) : 0;
     lines.push({ accountId: bill.categoryAccountId ?? keys.UNCATEGORISED_EXPENSE, debit: round2(total - vat) });
@@ -159,8 +170,18 @@ export async function postBill(invoiceId: string) {
       const isStock = line.item?.kind === "INVENTORY";
       // Non-VAT-registered businesses cannot reclaim input VAT, so it becomes part of the cost.
       const cost = claimVat ? net : round2(net + tax);
-      lines.push({ accountId: isStock ? keys.INVENTORY : line.accountId, debit: cost });
       if (claimVat) vatTotal += tax;
+      const orderLine = isStock && line.purchaseOrderLineId ? orderLines.find((o) => o.id === line.purchaseOrderLineId) : undefined;
+      if (orderLine && grniId && varianceId) {
+        // Stock came in (or will) with the delivery. The bill settles that accrual at the order price; whatever the
+        // supplier charged above or below it is a price variance.
+        const cleared = orderLineValue(orderLine, num(line.quantity), claimVat);
+        lines.push({ accountId: grniId, debit: cleared });
+        const variance = round2(cost - cleared);
+        if (variance !== 0) lines.push(variance > 0 ? { accountId: varianceId, debit: variance } : { accountId: varianceId, credit: -variance });
+        continue;
+      }
+      lines.push({ accountId: isStock ? keys.INVENTORY : line.accountId, debit: cost });
       if (isStock && line.itemId) {
         const qty = num(line.quantity);
         await prisma.stockMovement.create({
@@ -380,6 +401,50 @@ export async function postSupplierCredit(creditId: string) {
   await replaceEntry(credit.businessId, "SUPPLIER_CREDIT", credit.id, {
     date: credit.creditDate,
     memo: `Supplier credit ${credit.number} from ${credit.supplier.name}`,
+    lines,
+  });
+}
+
+// A delivery against a purchase order: stock comes in at the order price and the same amount is held in "Goods
+// received not invoiced" until the supplier's bill arrives. Only receipts recorded since this existed are booked.
+export async function postGoodsReceipt(receiptId: string) {
+  const receipt = await prisma.goodsReceipt.findUnique({
+    where: { id: receiptId },
+    include: {
+      lines: { include: { orderLine: { include: { item: true } } } },
+      order: { select: { number: true } },
+      business: { select: { vatRegistered: true } },
+    },
+  });
+  await prisma.stockMovement.deleteMany({ where: { sourceType: "GOODS_RECEIPT", sourceId: receiptId } });
+  if (!receipt || !receipt.accrued) return removeEntry("GOODS_RECEIPT", receiptId);
+
+  const keys = await accountIdsByKey(receipt.businessId);
+  const grniId = await ensureSystemAccount(receipt.businessId, "GRNI");
+  const claimVat = receipt.business.vatRegistered;
+  const lines: Line[] = [];
+  for (const line of receipt.lines) {
+    const orderLine = line.orderLine;
+    if (orderLine.item?.kind !== "INVENTORY" || !orderLine.itemId) continue;
+    const qty = num(line.quantity);
+    const value = orderLineValue(orderLine, qty, claimVat);
+    await prisma.stockMovement.create({
+      data: {
+        businessId: receipt.businessId,
+        itemId: orderLine.itemId,
+        date: receipt.receivedDate,
+        quantity: qty,
+        unitCost: qty > 0 ? value / qty : 0,
+        sourceType: "GOODS_RECEIPT",
+        sourceId: receipt.id,
+        note: `Goods received ${receipt.number} (${receipt.order.number})`,
+      },
+    });
+    lines.push({ accountId: keys.INVENTORY, debit: value }, { accountId: grniId, credit: value });
+  }
+  await replaceEntry(receipt.businessId, "GOODS_RECEIPT", receipt.id, {
+    date: receipt.receivedDate,
+    memo: `Goods received ${receipt.number} against ${receipt.order.number}`,
     lines,
   });
 }

@@ -78,6 +78,7 @@ enum JournalSource {
   CREDIT_NOTE
   SUPPLIER_CREDIT
   OPENING_BALANCE
+  GOODS_RECEIPT
 }
 
 enum CreditNoteStatus {
@@ -508,6 +509,8 @@ model Invoice {
   // The purchase order this bill was raised from.
   purchaseOrderId    String?
   purchaseOrder      PurchaseOrder?             @relation(fields: [purchaseOrderId], references: [id], onDelete: SetNull)
+  // Stock lines raised from a purchase order clear Goods received not invoiced instead of adding stock themselves.
+  usesGrni           Boolean                    @default(false)
   supplierCredits    SupplierCredit[]
   creditAllocations  SupplierCreditAllocation[]
 
@@ -928,6 +931,8 @@ model GoodsReceipt {
   number       String
   receivedDate DateTime           @db.Date
   note         String?
+  // Booked to stock and Goods received not invoiced when recorded. Receipts from before this existed are not.
+  accrued      Boolean            @default(false)
   createdAt    DateTime           @default(now())
   business     Business           @relation(fields: [businessId], references: [id], onDelete: Cascade)
   order        PurchaseOrder      @relation(fields: [orderId], references: [id], onDelete: Cascade)

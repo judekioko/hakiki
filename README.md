@@ -30,8 +30,10 @@ place, in the business's own currency.
   `GET /api/cron/recurring` with `Authorization: Bearer $CRON_SECRET` from a scheduler.
 - **Purchase orders:** order from a supplier, record deliveries (goods received notes, partial deliveries supported),
   and raise the supplier bill from the order with quantities prefilled from what arrived and has not been billed.
-  Ordered, received and billed are tracked per line. Orders and deliveries post nothing; stock and the payable are
-  booked when the bill is recorded.
+  Ordered, received and billed are tracked per line. Delivered stock goes into inventory when the delivery is recorded,
+  at the order price, against "Goods received not invoiced"; the supplier's bill clears that account and posts any price
+  difference to "Purchase price variance". The amount owed to the supplier is booked when the bill is recorded. Orders
+  already received or billed before this existed keep the old method (the bill adds the stock).
 - **Supplier credit notes:** record a credit from a supplier (goods returned, overcharge, discount), optionally taking
   returned stock out of inventory. It reverses the bill's cost and input tax, is applied to the bill it corrects, and
   reduces the bill's balance in payables ageing and payment matching.

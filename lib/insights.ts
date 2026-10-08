@@ -110,6 +110,11 @@ export async function businessInsights(business: { id: string; currency: string;
   }
 
   const stockValue = round2(stock.reduce((s, i) => s + i.value, 0));
+  const grni = await prisma.journalLine.aggregate({ where: { account: { businessId: business.id, systemKey: "GRNI" } }, _sum: { debit: true, credit: true } });
+  const awaitingBills = round2(num(grni._sum.credit) - num(grni._sum.debit));
+  if (awaitingBills > 0.5) {
+    insights.push({ tone: "info", text: `${money(awaitingBills)} of stock has been delivered and is waiting for the supplier bill.`, href: "/app/purchase-orders" });
+  }
   const openQuotes = quotes.filter((q) => quoteStatus(q) !== "EXPIRED");
   const lateOrders = orders.filter(
     (o) => (o.status === "ORDERED" || o.status === "PART_RECEIVED") && o.order.expectedDate && o.order.expectedDate.getTime() < Date.now() - 24 * 60 * 60 * 1000
