@@ -11,7 +11,9 @@ const navSections: { title: string | null; items: NavItem[] }[] = [
   {
     title: "Sales",
     items: [
+      { href: "/app/sales/quotations", label: "Quotations" },
       { href: "/app/sales/invoices", label: "Invoices" },
+      { href: "/app/sales/recurring", label: "Recurring invoices" },
       { href: "/app/sales/credit-notes", label: "Credit notes" },
       { href: "/app/sales/receipts", label: "Money received" },
       { href: "/app/sales/customers", label: "Customers" },

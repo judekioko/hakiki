@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { requireBusiness } from "@/lib/business";
+import { runDueRecurring } from "@/lib/recurring";
 import { businessContext } from "@/lib/form-options";
 import { formatDate } from "@/lib/format";
 import { INVOICE_DISPLAY, invoiceState, type InvoiceDisplayStatus } from "@/lib/sales";
@@ -21,6 +22,8 @@ const FILTERS: { value: string; label: string; match: (s: InvoiceDisplayStatus) 
 
 export default async function SalesInvoicesPage({ searchParams }: { searchParams: Promise<{ status?: string }> }) {
   const { business } = await requireBusiness();
+  // Recurring invoices that have fallen due are issued when someone opens the app.
+  await runDueRecurring(business.id);
   const { fmt } = businessContext(business);
   const { status: statusParam } = await searchParams;
   const filter = FILTERS.find((f) => f.value === statusParam) ?? FILTERS[4];

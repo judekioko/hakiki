@@ -1,6 +1,5 @@
 import "server-only";
 import { prisma } from "./prisma";
-import { getSession } from "./session";
 
 export type AuditAction = "CREATE" | "UPDATE" | "DELETE" | "VOID" | "SEND" | "APPROVE" | "REOPEN" | "LINK" | "UNLINK" | "IMPORT";
 
@@ -16,6 +15,8 @@ export const AUDIT_ENTITIES: Record<string, string> = {
   CUSTOMER: "Customer",
   PERIOD_LOCK: "Closed books",
   RECONCILIATION: "Reconciliation",
+  QUOTATION: "Quotation",
+  RECURRING: "Recurring invoice",
 };
 
 // Appends a line to the business's audit trail, attributed to the signed-in user.
@@ -28,6 +29,8 @@ export async function audit(
   summary: string
 ) {
   try {
+    // Loaded on demand: the session code needs the Next.js request context, which scripts and tests do not have.
+    const { getSession } = await import("./session");
     const session = await getSession();
     await prisma.auditLog.create({
       data: {

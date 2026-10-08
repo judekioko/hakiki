@@ -5,6 +5,8 @@ import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { createCustomer, recordReceipt, saveSalesInvoice, updateCustomer } from "@/lib/actions/sales";
 import { saveCreditNote } from "@/lib/actions/credit-notes";
+import { saveQuotation } from "@/lib/actions/quotations";
+import { saveRecurring } from "@/lib/actions/recurring";
 import { adjustStock, createItem, updateItem } from "@/lib/actions/items";
 import {
   createEmployee,
@@ -240,6 +242,183 @@ export function CreditNoteForm({
           Save & issue
         </SubmitButton>
       </div>
+    </form>
+  );
+}
+
+export function QuotationForm({
+  quotationId,
+  status,
+  customers,
+  items,
+  taxRates,
+  accounts,
+  chargeTax,
+  currency,
+  defaults,
+}: {
+  quotationId?: string;
+  status?: string;
+  customers: Option[];
+  items: EditorItem[];
+  taxRates: EditorTaxRate[];
+  accounts: AccountOption[];
+  chargeTax: boolean;
+  currency: string;
+  defaults: {
+    customerId?: string;
+    issueDate: string;
+    expiryDate: string;
+    reference?: string | null;
+    notes?: string | null;
+    lines?: Omit<EditorLine, "key">[];
+  };
+}) {
+  const { state, onSubmit, pending } = useFormAction(saveQuotation);
+  return (
+    <form onSubmit={onSubmit} className="space-y-5">
+      <Feedback state={state} />
+      <input type="hidden" name="quotationId" value={quotationId ?? ""} />
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        <Field label="Customer" htmlFor="customerId">
+          <Select id="customerId" name="customerId" defaultValue={defaults.customerId ?? ""} required>
+            <option value="">Choose a customer</option>
+            {customers.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </Select>
+        </Field>
+        <Field label="Quotation date" htmlFor="issueDate">
+          <Input id="issueDate" name="issueDate" type="date" defaultValue={defaults.issueDate} required />
+        </Field>
+        <Field label="Valid until" htmlFor="expiryDate">
+          <Input id="expiryDate" name="expiryDate" type="date" defaultValue={defaults.expiryDate} required />
+        </Field>
+      </div>
+      <LineItemsEditor
+        side="sale"
+        items={items}
+        taxRates={taxRates}
+        accounts={accounts}
+        chargeTax={chargeTax}
+        initial={defaults.lines}
+        currency={currency}
+      />
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Field label="Reference (optional)" htmlFor="reference">
+          <Input id="reference" name="reference" defaultValue={defaults.reference ?? ""} />
+        </Field>
+        <Field label="Notes to customer (optional)" htmlFor="notes">
+          <Input id="notes" name="notes" defaultValue={defaults.notes ?? ""} />
+        </Field>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        {!status || status === "DRAFT" ? (
+          <SubmitButton pending={pending} name="intent" value="draft" variant="secondary">
+            Save as draft
+          </SubmitButton>
+        ) : null}
+        <SubmitButton pending={pending} name="intent" value="send">
+          {!status || status === "DRAFT" ? "Save & mark as sent" : "Save changes"}
+        </SubmitButton>
+      </div>
+    </form>
+  );
+}
+
+export function RecurringForm({
+  recurringId,
+  customers,
+  items,
+  taxRates,
+  accounts,
+  chargeTax,
+  currency,
+  defaults,
+}: {
+  recurringId?: string;
+  customers: Option[];
+  items: EditorItem[];
+  taxRates: EditorTaxRate[];
+  accounts: AccountOption[];
+  chargeTax: boolean;
+  currency: string;
+  defaults: {
+    customerId?: string;
+    frequency: string;
+    interval: number;
+    startDate: string;
+    endDate?: string;
+    dueDays: number;
+    autoSend: boolean;
+    reference?: string | null;
+    notes?: string | null;
+    lines?: Omit<EditorLine, "key">[];
+  };
+}) {
+  const { state, onSubmit, pending } = useFormAction(saveRecurring);
+  return (
+    <form onSubmit={onSubmit} className="space-y-5">
+      <Feedback state={state} />
+      <input type="hidden" name="recurringId" value={recurringId ?? ""} />
+      <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+        <Field label="Customer" htmlFor="customerId">
+          <Select id="customerId" name="customerId" defaultValue={defaults.customerId ?? ""} required>
+            <option value="">Choose a customer</option>
+            {customers.map((c) => (
+              <option key={c.id} value={c.id}>
+                {c.name}
+              </option>
+            ))}
+          </Select>
+        </Field>
+        <Field label="Repeat" htmlFor="frequency">
+          <Select id="frequency" name="frequency" defaultValue={defaults.frequency}>
+            <option value="WEEKLY">Weekly</option>
+            <option value="MONTHLY">Monthly</option>
+            <option value="QUARTERLY">Quarterly</option>
+            <option value="YEARLY">Yearly</option>
+          </Select>
+        </Field>
+        <Field label="Every (number of periods)" htmlFor="interval">
+          <Input id="interval" name="interval" type="number" min={1} max={52} defaultValue={defaults.interval} required />
+        </Field>
+        <Field label="Payment terms (days)" htmlFor="dueDays">
+          <Input id="dueDays" name="dueDays" type="number" min={0} max={365} defaultValue={defaults.dueDays} required />
+        </Field>
+        <Field label="First invoice date" htmlFor="startDate">
+          <Input id="startDate" name="startDate" type="date" defaultValue={defaults.startDate} required />
+        </Field>
+        <Field label="Stop after (optional)" htmlFor="endDate">
+          <Input id="endDate" name="endDate" type="date" defaultValue={defaults.endDate ?? ""} />
+        </Field>
+      </div>
+      <LineItemsEditor
+        side="sale"
+        items={items}
+        taxRates={taxRates}
+        accounts={accounts}
+        chargeTax={chargeTax}
+        initial={defaults.lines}
+        currency={currency}
+      />
+      <div className="grid gap-4 sm:grid-cols-2">
+        <Field label="Reference / PO number (optional)" htmlFor="reference">
+          <Input id="reference" name="reference" defaultValue={defaults.reference ?? ""} />
+        </Field>
+        <Field label="Notes to customer (optional)" htmlFor="notes">
+          <Input id="notes" name="notes" defaultValue={defaults.notes ?? ""} />
+        </Field>
+      </div>
+      <label className="flex items-start gap-2 text-sm text-slate-700">
+        <input type="checkbox" name="autoSend" defaultChecked={defaults.autoSend} className="mt-0.5 h-4 w-4 rounded border-slate-300" />
+        <span>
+          Issue each invoice as sent (it posts to your books straight away). Leave unticked to get a draft to review first.
+        </span>
+      </label>
+      <SubmitButton pending={pending}>{recurringId ? "Save changes" : "Start recurring invoice"}</SubmitButton>
     </form>
   );
 }

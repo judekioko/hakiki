@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { requireBusiness } from "@/lib/business";
+import { runDueRecurring } from "@/lib/recurring";
 import { accountBalances, agedPayables, agedReceivables, profitAndLoss } from "@/lib/reports";
 import { currentFinancialYear, financialYear } from "@/lib/periods";
 import { businessContext } from "@/lib/form-options";
@@ -16,6 +17,8 @@ export const metadata = { title: "Dashboard" };
 
 export default async function DashboardPage() {
   const { business } = await requireBusiness();
+  // Recurring invoices that have fallen due are issued when someone opens the app.
+  await runDueRecurring(business.id);
   const { fmt, taxInvoiceLabel } = businessContext(business);
   const period = financialYear(currentFinancialYear(business.yearEndMonth), business.yearEndMonth);
 

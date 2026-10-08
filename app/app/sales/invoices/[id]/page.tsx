@@ -33,6 +33,7 @@ export default async function SalesInvoicePage({ params }: { params: Promise<{ i
       lines: { orderBy: { position: "asc" } },
       allocations: { include: { receipt: true } },
       creditAllocations: { include: { creditNote: true } },
+      recurringInvoice: { select: { id: true } },
     },
   });
   if (!invoice) notFound();
@@ -112,6 +113,11 @@ export default async function SalesInvoicePage({ params }: { params: Promise<{ i
               </p>
             ) : null}
             {invoice.reference ? <p className="text-sm text-slate-600">Ref: {invoice.reference}</p> : null}
+            {invoice.recurringInvoice ? (
+              <p className="text-xs text-slate-400 print:hidden">
+                Issued by a <Link href={`/app/sales/recurring/${invoice.recurringInvoice.id}`} className="hover:underline">recurring schedule</Link>
+              </p>
+            ) : null}
           </section>
 
           <table className="w-full text-sm">

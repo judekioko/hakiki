@@ -153,6 +153,25 @@ export const creditNoteSchema = z.object({
   reason: optionalText,
 });
 
+export const quotationSchema = z.object({
+  customerId: z.string().min(1, "Choose a customer"),
+  issueDate: isoDate,
+  expiryDate: isoDate,
+  reference: optionalText,
+  notes: optionalText,
+});
+
+export const recurringSchema = z.object({
+  customerId: z.string().min(1, "Choose a customer"),
+  frequency: z.enum(["WEEKLY", "MONTHLY", "QUARTERLY", "YEARLY"], { message: "Choose how often to invoice" }),
+  interval: z.coerce.number().int("Repeat every must be a whole number").min(1, "Repeat every must be at least 1").max(52),
+  startDate: isoDate,
+  endDate: optionalText.refine((v) => v === undefined || /^\d{4}-\d{2}-\d{2}$/.test(v), "Enter a valid end date"),
+  dueDays: z.coerce.number().int("Payment terms must be whole days").min(0).max(365),
+  reference: optionalText,
+  notes: optionalText,
+});
+
 export const receiptSchema = z.object({
   receivedAt: isoDate,
   amount: money,
