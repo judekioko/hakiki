@@ -10,7 +10,8 @@ import type { ExemptReason, JournalSource, PaymentSource } from "./generated/pri
 // Every document (sales invoice, bill, payment...) owns at most one journal entry.
 // Whenever a document changes its entry is rebuilt from scratch, so the ledger never drifts from the documents.
 
-type Line = { accountId: string; debit?: number; credit?: number; description?: string };
+// foreignAmount is the movement in the account's own currency (positive in, negative out), for foreign-currency accounts.
+type Line = { accountId: string; debit?: number; credit?: number; description?: string; foreignAmount?: number };
 
 export async function accountIdsByKey(businessId: string): Promise<Record<string, string>> {
   const accounts = await prisma.account.findMany({
@@ -44,7 +45,7 @@ export async function replaceEntry(
   entry: { date: Date; memo: string; lines: Line[] }
 ) {
   // Merge lines per account and side, and drop zero amounts.
-  const merged = new Map<string, { accountId: string; debit: number; credit: number; description?: string }>();
+  const merged = new Map<string, { accountId: string; debit: number; credit: number; description?: string; foreignAmount?: number }>();
   for (const line of entry.lines) {
     const debit = round2(line.debit ?? 0);
     const credit = round2(line.credit ?? 0);
@@ -53,6 +54,7 @@ export async function replaceEntry(
     const existing = merged.get(key) ?? { accountId: line.accountId, debit: 0, credit: 0, description: line.description };
     existing.debit = round2(existing.debit + debit);
     existing.credit = round2(existing.credit + credit);
+    if (line.foreignAmount !== undefined) existing.foreignAmount = round2((existing.foreignAmount ?? 0) + line.foreignAmount);
     merged.set(key, existing);
   }
   const lines = [...merged.values()];
@@ -127,7 +129,11 @@ export async function postPayment(paymentId: string) {
     lines: [
       { accountId: keys.AP, debit: allocated },
       { accountId: category, debit: round2(amount - allocated) },
-      { accountId: moneyAccountFor(keys, payment.moneyAccountId, payment.source), credit: amount },
+      {
+        accountId: moneyAccountFor(keys, payment.moneyAccountId, payment.source),
+        credit: amount,
+        ...(payment.foreignAmount !== null ? { foreignAmount: -num(payment.foreignAmount) } : {}),
+      },
     ],
   });
 }
@@ -286,7 +292,11 @@ export async function postReceipt(receiptId: string) {
     date: receipt.receivedAt,
     memo: `Received from ${receipt.payer}${receipt.reference ? ` (${receipt.reference})` : ""}`,
     lines: [
-      { accountId: moneyAccountFor(keys, receipt.moneyAccountId, receipt.source), debit: amount },
+      {
+        accountId: moneyAccountFor(keys, receipt.moneyAccountId, receipt.source),
+        debit: amount,
+        ...(receipt.foreignAmount !== null ? { foreignAmount: num(receipt.foreignAmount) } : {}),
+      },
       { accountId: keys.AR, credit: allocated },
       { accountId: unappliedAccount, credit: round2(amount - allocated) },
     ],
@@ -464,5 +474,33 @@ export async function postGoodsReceipt(receiptId: string) {
     date: receipt.receivedDate,
     memo: `Goods received ${receipt.number} against ${receipt.order.number}`,
     lines,
+  });
+}
+
+// Moving money between two of the business's own accounts. Each side is booked at its own rate (1 for a business-
+// currency account); whatever the two sides do not agree on is an exchange gain or loss.
+export async function postTransfer(transferId: string) {
+  const transfer = await prisma.moneyTransfer.findUnique({
+    where: { id: transferId },
+    include: { fromAccount: { select: { name: true, currency: true } }, toAccount: { select: { name: true, currency: true } } },
+  });
+  if (!transfer) return removeEntry("TRANSFER", transferId);
+
+  const fxAccountId = await ensureSystemAccount(transfer.businessId, "FX_GAIN_LOSS");
+  const fromAmount = num(transfer.fromAmount);
+  const toAmount = num(transfer.toAmount);
+  const baseFrom = round2(fromAmount * (transfer.fromAccount.currency ? num(transfer.fromRate) : 1));
+  const baseTo = round2(toAmount * (transfer.toAccount.currency ? num(transfer.toRate) : 1));
+  const difference = round2(baseTo - baseFrom);
+
+  await replaceEntry(transfer.businessId, "TRANSFER", transfer.id, {
+    date: transfer.date,
+    memo: `Transfer from ${transfer.fromAccount.name} to ${transfer.toAccount.name}${transfer.note ? `: ${transfer.note}` : ""}`,
+    lines: [
+      { accountId: transfer.toAccountId, debit: baseTo, ...(transfer.toAccount.currency ? { foreignAmount: toAmount } : {}) },
+      { accountId: transfer.fromAccountId, credit: baseFrom, ...(transfer.fromAccount.currency ? { foreignAmount: -fromAmount } : {}) },
+      // More arrived than left (in business-currency terms) is a gain; less is a loss.
+      difference > 0 ? { accountId: fxAccountId, credit: difference } : { accountId: fxAccountId, debit: -difference },
+    ],
   });
 }

@@ -6,7 +6,7 @@ import { num, round2 } from "@/lib/money";
 import { paymentStatus } from "@/lib/coverage";
 import { suggestInvoices } from "@/lib/matching";
 import { openInvoices } from "@/lib/auto-match";
-import { formatDate, toDateInput } from "@/lib/format";
+import { formatMoney, formatDate, toDateInput } from "@/lib/format";
 import { businessContext, categoryAccountOptions } from "@/lib/form-options";
 import { accountIdsByKey, defaultPaymentCategoryKey } from "@/lib/ledger";
 import { AccountSelect } from "@/components/form-kit";
@@ -59,7 +59,9 @@ export default async function PaymentDetailPage({ params }: { params: Promise<{ 
     <div className="space-y-6">
       <PageHeader
         title={payment.supplier?.name ?? payment.counterparty}
-        description={`Paid from ${moneyAccount?.name ?? payment.source} on ${formatDate(payment.paidAt)}${payment.reference ? ` · ${payment.reference}` : ""}`}
+        description={`Paid from ${moneyAccount?.name ?? payment.source} on ${formatDate(payment.paidAt)}${payment.reference ? ` · ${payment.reference}` : ""}${
+          moneyAccount?.currency && payment.foreignAmount ? ` · paid as ${formatMoney(num(payment.foreignAmount), moneyAccount.currency)} at ${num(payment.exchangeRate)}` : ""
+        }`}
         action={<StatusBadge status={status} />}
       />
 

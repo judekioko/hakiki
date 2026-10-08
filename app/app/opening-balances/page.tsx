@@ -13,6 +13,7 @@ import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
 import { Table, Tbody, Td, Th, Thead, Tr } from "@/components/ui/table";
 import { SubmitButton } from "@/components/forms";
 import { OpeningAccountsForm, OpeningItemForm } from "@/components/opening-balances-forms";
+import { ForeignOpeningForm } from "@/components/foreign-opening-form";
 
 export const metadata = { title: "Opening balances" };
 
@@ -54,12 +55,26 @@ export default async function OpeningBalancesPage() {
     saved.set(line.accountId, round2((saved.get(line.accountId) ?? 0) + num(line.debit) - num(line.credit)));
   }
   const rows = accounts
-    .filter((a) => !excluded.has(a.id))
+    .filter((a) => !excluded.has(a.id) && !a.currency)
     .sort((a, b) => Number(!!b.moneyKind) - Number(!!a.moneyKind) || a.code.localeCompare(b.code))
     .map((a) => {
       const net = saved.get(a.id) ?? 0;
       return { id: a.id, code: a.code, name: a.name, type: a.type as string, kind: a.moneyKind as string | null, amount: debitNatured(a.type) ? net : -net };
     });
+
+  // Foreign-currency accounts carry their own opening entry (amount in the account's currency, and the rate).
+  const foreignAccounts = accounts.filter((a) => a.currency && a.moneyKind);
+  const foreignEntries = await prisma.journalEntry.findMany({
+    where: { businessId: business.id, sourceType: "OPENING_BALANCE", sourceId: { in: foreignAccounts.map((a) => `fx:${a.id}`) } },
+    include: { lines: true },
+  });
+  const foreignOpening = new Map(
+    foreignAccounts.map((a) => {
+      const line = foreignEntries.find((e) => e.sourceId === `fx:${a.id}`)?.lines.find((l) => l.accountId === a.id);
+      const foreign = line?.foreignAmount ? num(line.foreignAmount) : null;
+      return [a.id, { amount: foreign, rate: foreign && line ? Math.round((num(line.debit) / foreign) * 1e8) / 1e8 : null }];
+    })
+  );
 
   const customerTotal = invoices.reduce((s, i) => s + num(i.total), 0);
   const supplierTotal = bills.reduce((s, b) => s + num(b.totalAmount), 0);
@@ -95,6 +110,31 @@ export default async function OpeningBalancesPage() {
           />
         </CardBody>
       </Card>
+
+      {foreignAccounts.length > 0 ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Foreign-currency accounts</CardTitle>
+          </CardHeader>
+          <CardBody className="space-y-3">
+            <p className="text-sm text-slate-600">
+              Enter what each of these accounts held on the opening date, in its own currency, and what one unit of that currency was worth then.
+            </p>
+            {foreignAccounts.map((a) => (
+              <ForeignOpeningForm
+                key={a.id}
+                accountId={a.id}
+                name={a.name}
+                currency={a.currency!}
+                baseCurrency={business.currency}
+                amount={foreignOpening.get(a.id)?.amount ?? null}
+                rate={foreignOpening.get(a.id)?.rate ?? null}
+                disabled={!openingDate}
+              />
+            ))}
+          </CardBody>
+        </Card>
+      ) : null}
 
       <Card>
         <CardHeader>

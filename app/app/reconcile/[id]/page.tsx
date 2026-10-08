@@ -2,11 +2,10 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { requireBusiness } from "@/lib/business";
-import { businessContext } from "@/lib/form-options";
-import { formatDate } from "@/lib/format";
+import { formatDate, moneyFormatter } from "@/lib/format";
 import { num } from "@/lib/money";
 import { sourceHref } from "@/lib/journal-links";
-import { candidateLines, clearedBalance } from "@/lib/reconcile";
+import { candidateLines, clearedBalance, lineMovement } from "@/lib/reconcile";
 import { discardReconciliation, undoReconciliation } from "@/lib/actions/reconcile";
 import { PageHeader } from "@/components/page-header";
 import { Badge } from "@/components/ui/badge";
@@ -22,11 +21,14 @@ export default async function ReconciliationPage({ params }: { params: Promise<{
   const { id } = await params;
   const reconciliation = await prisma.reconciliation.findFirst({
     where: { id, businessId: business.id },
-    include: { account: { select: { name: true } } },
+    include: { account: { select: { name: true, currency: true } } },
   });
   if (!reconciliation) notFound();
 
-  const { fmt } = businessContext(business);
+  // A foreign-currency account is reconciled in its own currency.
+  const currency = reconciliation.account.currency ?? business.currency;
+  const foreign = !!reconciliation.account.currency;
+  const fmt = moneyFormatter(currency);
   const opening = num(reconciliation.openingBalance);
   const statementBalance = num(reconciliation.statementBalance);
   const lines = await candidateLines(reconciliation);
@@ -57,14 +59,14 @@ export default async function ReconciliationPage({ params }: { params: Promise<{
           reconciliationId={reconciliation.id}
           opening={opening}
           statementBalance={statementBalance}
-          currency={business.currency}
+          currency={currency}
           lines={lines.map((l) => ({
             id: l.id,
             date: dateFormat(l.entry.date),
             memo: l.description ? `${l.entry.memo} · ${l.description}` : l.entry.memo,
             href: sourceHref(l.entry.sourceType, l.entry.sourceId),
-            moneyIn: num(l.debit),
-            moneyOut: num(l.credit),
+            moneyIn: Math.max(0, lineMovement(l, foreign)),
+            moneyOut: Math.max(0, -lineMovement(l, foreign)),
             checked: l.reconciliationId === reconciliation.id,
           }))}
         />
@@ -74,9 +76,9 @@ export default async function ReconciliationPage({ params }: { params: Promise<{
 
   // Completed: a read-only record that can be printed for the auditor.
   const cleared = lines.filter((l) => l.reconciliationId === reconciliation.id);
-  const closing = clearedBalance(opening, cleared);
-  const moneyIn = cleared.reduce((s, l) => s + num(l.debit), 0);
-  const moneyOut = cleared.reduce((s, l) => s + num(l.credit), 0);
+  const closing = clearedBalance(opening, cleared, foreign);
+  const moneyIn = cleared.reduce((s, l) => s + Math.max(0, lineMovement(l, foreign)), 0);
+  const moneyOut = cleared.reduce((s, l) => s + Math.max(0, -lineMovement(l, foreign)), 0);
   const later = await prisma.reconciliation.count({
     where: { accountId: reconciliation.accountId, status: "COMPLETED", statementDate: { gt: reconciliation.statementDate } },
   });
@@ -149,8 +151,8 @@ export default async function ReconciliationPage({ params }: { params: Promise<{
                     l.entry.memo
                   )}
                 </Td>
-                <Td className="whitespace-nowrap text-right">{num(l.debit) ? fmt(num(l.debit)) : ""}</Td>
-                <Td className="whitespace-nowrap text-right">{num(l.credit) ? fmt(num(l.credit)) : ""}</Td>
+                <Td className="whitespace-nowrap text-right">{lineMovement(l, foreign) > 0 ? fmt(lineMovement(l, foreign)) : ""}</Td>
+                <Td className="whitespace-nowrap text-right">{lineMovement(l, foreign) < 0 ? fmt(-lineMovement(l, foreign)) : ""}</Td>
               </Tr>
             );
           })}

@@ -9,6 +9,7 @@ import { documentLockMessage, lockMessage } from "@/lib/period-lock";
 import { num, round2 } from "@/lib/money";
 import { normaliseAlias } from "@/lib/matching";
 import { audit } from "@/lib/audit";
+import { convertForAccount } from "@/lib/fx";
 import { settledAmount } from "@/lib/sales";
 import { accountIdsByKey, postReceipt, postSalesInvoice } from "@/lib/ledger";
 import { runReceiptAutoMatch } from "@/lib/receipt-match";
@@ -264,6 +265,8 @@ export async function recordReceipt(_prev: ActionState, formData: FormData): Pro
 
   const receivedLock = lockMessage(business, new Date(`${data.receivedAt}T12:00:00+03:00`));
   if (receivedLock) return { error: receivedLock };
+  const money = convertForAccount(account, data.amount, formData.get("exchangeRate"), business.currency);
+  if ("error" in money) return { error: money.error };
 
   const reference = data.reference?.toUpperCase() ?? null;
   if (reference && (await prisma.receipt.findFirst({ where: { businessId: business.id, reference } }))) {
@@ -290,14 +293,16 @@ export async function recordReceipt(_prev: ActionState, formData: FormData): Pro
       source: sourceForMoneyAccount(account),
       reference,
       receivedAt: new Date(`${data.receivedAt}T12:00:00+03:00`),
-      amount: data.amount,
+      amount: money.amount,
+      foreignAmount: money.foreignAmount,
+      exchangeRate: money.exchangeRate,
       payer: data.payer,
       details: data.details ?? null,
     },
   });
   if (invoice) {
     const open = round2(num(invoice.total) - settledAmount(invoice));
-    const amount = Math.min(open, data.amount);
+    const amount = Math.min(open, money.amount);
     if (amount > 0) {
       await prisma.receiptAllocation.create({ data: { receiptId: receipt.id, invoiceId: invoice.id, amount } });
     }
@@ -308,7 +313,7 @@ export async function recordReceipt(_prev: ActionState, formData: FormData): Pro
     "CREATE",
     "RECEIPT",
     receipt.id,
-    `Recorded ${data.amount.toFixed(2)} received from ${data.payer}${invoice ? ` for invoice ${invoice.number}` : ""}`
+    `Recorded ${account.currency && money.foreignAmount !== null ? `${account.currency} ` : ""}${data.amount.toFixed(2)} received from ${data.payer}${invoice ? ` for invoice ${invoice.number}` : ""}`
   );
   revalidateAll();
   redirect(invoice ? `/app/sales/invoices/${invoice.id}` : `/app/sales/receipts/${receipt.id}`);

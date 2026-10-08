@@ -7,6 +7,7 @@ import { currencyDigits, formatDate, formatNumber, moneyFormatter, toDateInput }
 import { businessContext, moneyAccountOptions } from "@/lib/form-options";
 import { INVOICE_DISPLAY, invoiceState } from "@/lib/sales";
 import { settleInvoiceExchangeDifference } from "@/lib/actions/fx";
+import { latestRates } from "@/lib/fx";
 import {
   deleteDraftInvoice,
   markInvoiceSent,
@@ -42,7 +43,7 @@ export default async function SalesInvoicePage({ params }: { params: Promise<{ i
 
   const { fmt, pack } = businessContext(business);
   const state = invoiceState(invoice);
-  const moneyAccounts = await moneyAccountOptions(business.id);
+  const [moneyAccounts, rates] = await Promise.all([moneyAccountOptions(business.id), latestRates(business.id)]);
   const display = INVOICE_DISPLAY[state.status];
   // A foreign-currency invoice shows the customer's amounts in that currency; the books (and the balance owing) are
   // in the business currency at the rate stored on the invoice.
@@ -219,6 +220,8 @@ export default async function SalesInvoicePage({ params }: { params: Promise<{ i
                   customerId={invoice.customerId}
                   defaultAmount={state.balance}
                   defaultPayer={invoice.customer.name}
+                  baseCurrency={business.currency}
+                  rates={rates}
                 />
               </CardBody>
             </Card>

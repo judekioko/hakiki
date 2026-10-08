@@ -11,6 +11,7 @@ export type AccountBalance = {
   type: AccountType;
   systemKey: string | null;
   moneyKind: string | null;
+  currency: string | null;
   debit: number;
   credit: number;
   // Positive in the account's normal direction: debit for assets/expenses, credit for the rest.
@@ -44,6 +45,7 @@ export async function accountBalances(businessId: string, range: { from?: Date; 
       type: a.type,
       systemKey: a.systemKey,
       moneyKind: a.moneyKind,
+      currency: a.currency,
       debit: round2(debit),
       credit: round2(credit),
       balance: round2(DEBIT_NORMAL.includes(a.type) ? debit - credit : credit - debit),

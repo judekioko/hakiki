@@ -3,7 +3,7 @@ import { notFound } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { requireBusiness } from "@/lib/business";
 import { num, round2 } from "@/lib/money";
-import { formatDate } from "@/lib/format";
+import { formatMoney, formatDate } from "@/lib/format";
 import { businessContext, categoryAccountOptions } from "@/lib/form-options";
 import { openSalesInvoices } from "@/lib/receipt-match";
 import { nameSimilarity } from "@/lib/matching";
@@ -59,7 +59,9 @@ export default async function ReceiptPage({ params }: { params: Promise<{ id: st
     <div className="space-y-6">
       <PageHeader
         title={`${fmt(amount)} from ${receipt.customer?.name ?? receipt.payer}`}
-        description={`Into ${moneyAccount?.name ?? receipt.source} on ${formatDate(receipt.receivedAt)}${receipt.reference ? ` · ${receipt.reference}` : ""}`}
+        description={`Into ${moneyAccount?.name ?? receipt.source} on ${formatDate(receipt.receivedAt)}${receipt.reference ? ` · ${receipt.reference}` : ""}${
+          moneyAccount?.currency && receipt.foreignAmount ? ` · received as ${formatMoney(num(receipt.foreignAmount), moneyAccount.currency)} at ${num(receipt.exchangeRate)}` : ""
+        }`}
       />
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="space-y-6 lg:col-span-2">

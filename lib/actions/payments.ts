@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { prisma } from "@/lib/prisma";
 import { audit } from "@/lib/audit";
+import { convertForAccount } from "@/lib/fx";
 import { requireBusiness } from "@/lib/business";
 import { blockedByLock } from "@/lib/lock-guard";
 import { isLocked, lockMessage } from "@/lib/period-lock";
@@ -35,6 +36,15 @@ export async function importStatement(_prev: ActionState, formData: FormData): P
   if (!account) return { error: "Choose which account this statement is for" };
   const source = sourceForMoneyAccount(account);
   const includeIncoming = formData.get("includeIncoming") === "on";
+  // A statement from a foreign-currency account is in that currency; one rate converts it all.
+  const fileRate = account.currency ? Number(formData.get("exchangeRate")) : 1;
+  if (account.currency && (!Number.isFinite(fileRate) || fileRate <= 0)) {
+    return { error: `This account is in ${account.currency}. Enter the exchange rate to use for the statement: how many ${business.currency} one ${account.currency} is worth` };
+  }
+  const fx = (amount: number) =>
+    account.currency
+      ? { amount: Math.round(amount * fileRate * 100) / 100, foreignAmount: amount, exchangeRate: fileRate }
+      : { amount, foreignAmount: null, exchangeRate: null };
 
   if (!(file instanceof File) || file.size === 0) return { error: "Choose a CSV file to import" };
   if (file.size > MAX_STATEMENT_BYTES) return { error: "The file is larger than 5 MB" };
@@ -75,7 +85,7 @@ export async function importStatement(_prev: ActionState, formData: FormData): P
       source,
       reference: p.reference,
       paidAt: p.paidAt,
-      amount: p.amount,
+      ...fx(p.amount),
       counterparty: p.counterparty,
       details: p.details || null,
       supplierId: supplierAliases.get(normaliseAlias(p.counterparty)) ?? null,
@@ -103,7 +113,7 @@ export async function importStatement(_prev: ActionState, formData: FormData): P
         source,
         reference: p.reference,
         receivedAt: p.paidAt,
-        amount: p.amount,
+        ...fx(p.amount),
         payer: p.counterparty,
         details: p.details || null,
         customerId: customerAliases.get(normaliseAlias(p.counterparty)) ?? null,
@@ -160,6 +170,8 @@ export async function createPayment(_prev: ActionState, formData: FormData): Pro
   const data = parsed.data;
   const paidLock = lockMessage(business, new Date(`${data.paidAt}T12:00:00+03:00`));
   if (paidLock) return { error: paidLock };
+  const money = convertForAccount(account, data.amount, formData.get("exchangeRate"), business.currency);
+  if ("error" in money) return { error: money.error };
   const reference = data.reference?.toUpperCase() ?? null;
 
   if (reference) {
@@ -176,7 +188,9 @@ export async function createPayment(_prev: ActionState, formData: FormData): Pro
       reference,
       // Noon Nairobi time keeps manually entered dates on the right day.
       paidAt: new Date(`${data.paidAt}T12:00:00+03:00`),
-      amount: data.amount,
+      amount: money.amount,
+      foreignAmount: money.foreignAmount,
+      exchangeRate: money.exchangeRate,
       counterparty: data.counterparty,
       details: data.details,
       categoryAccountId,
@@ -185,7 +199,7 @@ export async function createPayment(_prev: ActionState, formData: FormData): Pro
   });
   await postPayment(payment.id);
   await runAutoMatch(business.id);
-  await audit(business.id, "CREATE", "PAYMENT", payment.id, `Recorded ${data.amount.toFixed(2)} paid to ${data.counterparty}`);
+  await audit(business.id, "CREATE", "PAYMENT", payment.id, `Recorded ${account.currency ? `${account.currency} ` : ""}${data.amount.toFixed(2)} paid to ${data.counterparty}`);
   revalidateAll();
   redirect(`/app/payments/${payment.id}`);
 }

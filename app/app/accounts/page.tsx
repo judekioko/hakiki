@@ -5,6 +5,7 @@ import { businessContext } from "@/lib/form-options";
 import { prisma } from "@/lib/prisma";
 import { setAccountArchived } from "@/lib/actions/accounting";
 import { MONEY_KIND_LABEL } from "@/lib/money-accounts";
+import { formatMoney } from "@/lib/format";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -18,10 +19,12 @@ const TYPE_LABEL = { ASSET: "Assets", LIABILITY: "Liabilities", EQUITY: "Equity"
 export default async function AccountsPage() {
   const { business } = await requireBusiness();
   const { fmt } = businessContext(business);
-  const [balances, archived] = await Promise.all([
+  const [balances, archived, foreignSums] = await Promise.all([
     accountBalances(business.id),
     prisma.account.findMany({ where: { businessId: business.id, isArchived: true }, select: { id: true } }),
+    prisma.journalLine.groupBy({ by: ["accountId"], where: { account: { businessId: business.id, currency: { not: null } } }, _sum: { foreignAmount: true } }),
   ]);
+  const foreignBy = new Map(foreignSums.map((f) => [f.accountId, Number(f._sum.foreignAmount ?? 0)]));
   const archivedIds = new Set(archived.map((a) => a.id));
 
   return (
@@ -46,9 +49,11 @@ export default async function AccountsPage() {
                             {b.name}
                           </Link>
                           {b.moneyKind ? <Badge tone="teal">{MONEY_KIND_LABEL[b.moneyKind as keyof typeof MONEY_KIND_LABEL]}</Badge> : null}
+                          {b.currency ? <Badge tone="amber">{b.currency}</Badge> : null}
                           {b.systemKey ? <Badge>System</Badge> : null}
                         </div>
                         <div className="flex shrink-0 items-center gap-2">
+                          {b.currency && foreignBy.has(b.id) ? <span className="text-xs text-slate-500">{formatMoney(foreignBy.get(b.id)!, b.currency)}</span> : null}
                           <span className={b.balance < 0 ? "text-rose-700" : ""}>{b.debit || b.credit ? fmt(b.balance) : "—"}</span>
                           {!b.systemKey ? (
                             <form action={setAccountArchived}>
@@ -72,7 +77,7 @@ export default async function AccountsPage() {
             <CardTitle>Add an account</CardTitle>
           </CardHeader>
           <CardBody>
-            <AccountForm />
+            <AccountForm baseCurrency={business.currency} />
           </CardBody>
         </Card>
       </div>

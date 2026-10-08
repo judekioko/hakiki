@@ -5,12 +5,13 @@ import { PageHeader } from "@/components/page-header";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
 import { ImportForm } from "@/components/forms";
 import { moneyAccountOptions } from "@/lib/form-options";
+import { latestRates } from "@/lib/fx";
 
 export const metadata = { title: "Import statement" };
 
 export default async function ImportPage() {
   const { business } = await requireBusiness();
-  const moneyAccounts = await moneyAccountOptions(business.id);
+  const [moneyAccounts, rates] = await Promise.all([moneyAccountOptions(business.id), latestRates(business.id)]);
   const batches = await prisma.importBatch.findMany({
     where: { businessId: business.id },
     orderBy: { createdAt: "desc" },
@@ -23,7 +24,7 @@ export default async function ImportPage() {
       <div className="grid gap-6 lg:grid-cols-5">
         <Card className="lg:col-span-3">
           <CardBody>
-            <ImportForm moneyAccounts={moneyAccounts} />
+            <ImportForm moneyAccounts={moneyAccounts} baseCurrency={business.currency} rates={rates} />
           </CardBody>
         </Card>
         <Card className="lg:col-span-2">

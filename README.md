@@ -63,6 +63,13 @@ place, in the business's own currency.
   as Balance or Debit/Credit columns), and the unpaid customer invoices and supplier bills over from a spreadsheet (Accounting → Import from CSV). Each type has a downloadable template; column
   headings are matched by name, a preview shows what will happen to every row (new, already there, or a problem), and
   re-importing the same file never duplicates anything.
+- **Foreign-currency accounts:** a bank, mobile money or cash account can be held in a foreign currency (USD, EUR...).
+  Money received and paid, and imported statements, are entered in that currency at a rate; the books hold the converted
+  amounts and each line also keeps its amount in the account's own currency. **Transfers & exchange** moves money
+  between your accounts, including converting between currencies (the difference at the rates given is an exchange
+  gain or loss). **Revalue currencies** brings each foreign account to its balance at a closing rate at month- or
+  year-end. Reconciliation of a foreign account works in its own currency. Foreign accounts cannot be used in manual
+  journals or payroll payments.
 - **Purchases:** supplier bills (single total or line items), money paid out, suppliers, and the supplier tax-invoice
   check (eTIMS, EFRIS, EBM...) with WhatsApp requests for missing invoices.
 - **Statement import:** bank and mobile money CSVs. Money out becomes payments, money in becomes receipts. Columns are

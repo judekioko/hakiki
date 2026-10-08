@@ -60,7 +60,7 @@ export async function saveReconciliation(_prev: ActionState, formData: FormData)
 
   const reconciliation = await prisma.reconciliation.findFirst({
     where: { id: String(formData.get("reconciliationId") ?? ""), businessId: business.id },
-    include: { account: { select: { name: true } } },
+    include: { account: { select: { name: true, currency: true } } },
   });
   if (!reconciliation) return { error: "Reconciliation not found" };
   if (reconciliation.status !== "IN_PROGRESS") return { error: "This reconciliation is already complete" };
@@ -74,7 +74,7 @@ export async function saveReconciliation(_prev: ActionState, formData: FormData)
     prisma.journalLine.updateMany({ where: { id: { in: chosen.map((l) => l.id) } }, data: { reconciliationId: reconciliation.id } }),
   ]);
 
-  const cleared = clearedBalance(Number(reconciliation.openingBalance), chosen);
+  const cleared = clearedBalance(Number(reconciliation.openingBalance), chosen, !!reconciliation.account.currency);
   const difference = round2(Number(reconciliation.statementBalance) - cleared);
 
   if (formData.get("intent") !== "finish") {

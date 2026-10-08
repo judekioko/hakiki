@@ -44,8 +44,10 @@ export async function saveOpeningAccounts(
   const excluded = new Set<string>(OPENING_EXCLUDED_KEYS.map((k) => keys[k]));
   const accounts = await prisma.account.findMany({
     where: { businessId: business.id, id: { in: nonZero.map((e) => e.accountId) } },
-    select: { id: true, name: true, type: true },
+    select: { id: true, name: true, type: true, currency: true },
   });
+  const foreign = accounts.find((a) => a.currency);
+  if (foreign) return { error: `${foreign.name} is in ${foreign.currency}. Enter its opening balance in the foreign-currency section of the Opening balances page.` };
   const byId = new Map(accounts.map((a) => [a.id, a]));
 
   const lines: { accountId: string; debit?: number; credit?: number; description?: string }[] = [];

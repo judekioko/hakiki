@@ -268,7 +268,7 @@ export async function recordPayrollPayment(_prev: ActionState, formData: FormDat
   });
   if (!run) return { error: "Approve the pay run first" };
   const account = await prisma.account.findFirst({
-    where: { id: String(formData.get("moneyAccountId") ?? ""), businessId: business.id, moneyKind: { not: null } },
+    where: { id: String(formData.get("moneyAccountId") ?? ""), businessId: business.id, moneyKind: { not: null }, currency: null },
   });
   if (!account) return { error: "Choose the account the money was paid from" };
   const date = String(formData.get("paidAt") ?? "");

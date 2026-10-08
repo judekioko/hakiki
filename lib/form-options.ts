@@ -4,12 +4,13 @@ import { num } from "./money";
 import { COUNTRIES, countryPack, taxInvoiceLabel } from "./countries";
 import { moneyFormatter } from "./format";
 
-export async function moneyAccountOptions(businessId: string) {
+// Bank, mobile money and cash accounts. Pass baseOnly for forms that can only use business-currency accounts.
+export async function moneyAccountOptions(businessId: string, options: { baseOnly?: boolean } = {}) {
   const accounts = await prisma.account.findMany({
-    where: { businessId, moneyKind: { not: null }, isArchived: false },
+    where: { businessId, moneyKind: { not: null }, isArchived: false, ...(options.baseOnly ? { currency: null } : {}) },
     orderBy: { code: "asc" },
   });
-  return accounts.map((a) => ({ id: a.id, name: a.name, kind: a.moneyKind! }));
+  return accounts.map((a) => ({ id: a.id, name: a.name, kind: a.moneyKind!, currency: a.currency }));
 }
 
 // Accounts a transaction can be categorised to (everything except the money accounts themselves).

@@ -166,29 +166,68 @@ export function BusinessForm({
   );
 }
 
-export type MoneyAccountOption = { id: string; name: string; kind: string };
+export type MoneyAccountOption = { id: string; name: string; kind: string; currency: string | null };
 
-function MoneyAccountField({ accounts, label, defaultValue }: { accounts: MoneyAccountOption[]; label: string; defaultValue?: string }) {
+// Choose a bank, mobile money or cash account. For an account in a foreign currency it also asks for the exchange rate,
+// and the amounts on the form are then in that currency.
+export function MoneyAccountField({
+  accounts,
+  label,
+  defaultValue,
+  baseCurrency,
+  rates,
+}: {
+  accounts: MoneyAccountOption[];
+  label: string;
+  defaultValue?: string;
+  baseCurrency?: string;
+  rates?: Record<string, number>;
+}) {
+  const [accountId, setAccountId] = useState(defaultValue ?? accounts[0]?.id ?? "");
+  const [rate, setRate] = useState("");
+  const chosen = accounts.find((a) => a.id === accountId);
+  const currency = chosen?.currency ?? null;
   return (
-    <Field label={label} htmlFor="moneyAccountId">
-      <Select id="moneyAccountId" name="moneyAccountId" defaultValue={defaultValue ?? accounts[0]?.id}>
-        {accounts.map((a) => (
-          <option key={a.id} value={a.id}>
-            {a.name}
-          </option>
-        ))}
-      </Select>
-    </Field>
+    <div className="space-y-3">
+      <Field label={label} htmlFor="moneyAccountId">
+        <Select
+          id="moneyAccountId"
+          name="moneyAccountId"
+          value={accountId}
+          onChange={(e) => {
+            setAccountId(e.target.value);
+            const next = accounts.find((a) => a.id === e.target.value)?.currency;
+            setRate(next && rates?.[next] ? String(rates[next]) : "");
+          }}
+        >
+          {accounts.map((a) => (
+            <option key={a.id} value={a.id}>
+              {a.name}
+              {a.currency ? ` (${a.currency})` : ""}
+            </option>
+          ))}
+        </Select>
+      </Field>
+      {currency ? (
+        <Field
+          label={`Exchange rate: 1 ${currency} = ? ${baseCurrency ?? ""}`}
+          htmlFor="exchangeRate"
+          hint={`This account is in ${currency}, so enter the amounts on this form in ${currency}.`}
+        >
+          <Input id="exchangeRate" name="exchangeRate" type="number" step="any" min="0" value={rate} onChange={(e) => setRate(e.target.value)} required />
+        </Field>
+      ) : null}
+    </div>
   );
 }
 
-export function ImportForm({ moneyAccounts }: { moneyAccounts: MoneyAccountOption[] }) {
+export function ImportForm({ moneyAccounts, baseCurrency, rates }: { moneyAccounts: MoneyAccountOption[]; baseCurrency: string; rates: Record<string, number> }) {
   const { state, onSubmit, pending } = useFormAction(importStatement);
   const mobile = moneyAccounts.find((a) => a.kind === "MOBILE_MONEY");
   return (
     <form onSubmit={onSubmit} className="space-y-4">
       <Feedback state={state} />
-      <MoneyAccountField accounts={moneyAccounts} label="Statement for account" defaultValue={mobile?.id} />
+      <MoneyAccountField accounts={moneyAccounts} label="Statement for account" defaultValue={mobile?.id} baseCurrency={baseCurrency} rates={rates} />
       <Field label="CSV file" htmlFor="file" hint="Re-importing the same statement skips transactions already added.">
         <Input id="file" name="file" type="file" accept=".csv,text/csv" required />
       </Field>
@@ -207,17 +246,21 @@ export function PaymentForm({
   today,
   moneyAccounts,
   categories,
+  baseCurrency,
+  rates,
 }: {
   today: string;
   moneyAccounts: MoneyAccountOption[];
   categories: AccountOption[];
+  baseCurrency: string;
+  rates: Record<string, number>;
 }) {
   const { state, onSubmit, pending } = useFormAction(createPayment);
   return (
     <form onSubmit={onSubmit} className="space-y-4">
       <Feedback state={state} />
       <div className="grid gap-4 sm:grid-cols-2">
-        <MoneyAccountField accounts={moneyAccounts} label="Paid from" defaultValue={moneyAccounts.find((a) => a.kind === "CASH")?.id} />
+        <MoneyAccountField accounts={moneyAccounts} label="Paid from" defaultValue={moneyAccounts.find((a) => a.kind === "CASH")?.id} baseCurrency={baseCurrency} rates={rates} />
         <Field label="Date paid" htmlFor="paidAt">
           <Input id="paidAt" name="paidAt" type="date" defaultValue={today} required />
         </Field>

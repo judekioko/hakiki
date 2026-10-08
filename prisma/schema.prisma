@@ -79,6 +79,8 @@ enum JournalSource {
   SUPPLIER_CREDIT
   OPENING_BALANCE
   GOODS_RECEIPT
+  TRANSFER
+  FX_REVALUATION
 }
 
 enum CreditNoteStatus {
@@ -202,6 +204,7 @@ model Business {
   supplierCredits       SupplierCredit[]
   paymentReminders      PaymentReminder[]
   exchangeRates         ExchangeRate[]
+  moneyTransfers        MoneyTransfer[]
 }
 
 model Membership {
@@ -227,12 +230,17 @@ model Account {
   // Stable key for accounts the app posts to automatically, e.g. "AR", "AP", "VAT_OUT". Null for user accounts.
   systemKey       String?
   moneyKind       MoneyKind?
+  // Set for a bank, mobile money or cash account held in a foreign currency. Its lines keep the amount in this currency
+  // as well as in the business currency, and it is revalued to the closing rate.
+  currency        String?
   description     String?
   isArchived      Boolean          @default(false)
   createdAt       DateTime         @default(now())
   business        Business         @relation(fields: [businessId], references: [id], onDelete: Cascade)
   lines           JournalLine[]
   reconciliations Reconciliation[]
+  transfersOut    MoneyTransfer[]  @relation("TransferFrom")
+  transfersIn     MoneyTransfer[]  @relation("TransferTo")
 
   @@unique([businessId, code])
   @@unique([businessId, systemKey])
@@ -255,14 +263,16 @@ model JournalEntry {
 }
 
 model JournalLine {
-  id          String       @id @default(cuid())
-  entryId     String
-  accountId   String
-  debit       Decimal      @default(0) @db.Decimal(16, 2)
-  credit      Decimal      @default(0) @db.Decimal(16, 2)
-  description String?
-  entry       JournalEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
-  account     Account      @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  id            String       @id @default(cuid())
+  entryId       String
+  accountId     String
+  debit         Decimal      @default(0) @db.Decimal(16, 2)
+  credit        Decimal      @default(0) @db.Decimal(16, 2)
+  // The movement in the account's own currency (positive in, negative out) for lines on a foreign-currency account.
+  foreignAmount Decimal?     @db.Decimal(16, 2)
+  description   String?
+  entry         JournalEntry @relation(fields: [entryId], references: [id], onDelete: Cascade)
+  account       Account      @relation(fields: [accountId], references: [id], onDelete: Cascade)
 
   // Set when this line has been ticked off against a bank, mobile money or cash statement.
   reconciliationId String?
@@ -446,6 +456,10 @@ model Receipt {
   reference         String?
   receivedAt        DateTime
   amount            Decimal             @db.Decimal(14, 2)
+  // For a foreign-currency money account: the amount in that currency and the rate it was converted at. `amount` above is
+  // always in the business currency.
+  foreignAmount     Decimal?            @db.Decimal(14, 2)
+  exchangeRate      Decimal?            @db.Decimal(18, 8)
   payer             String
   details           String?
   // Where any amount not applied to invoices is booked (other income, loan received...). Defaults to other income.
@@ -556,6 +570,10 @@ model Payment {
   reference          String?
   paidAt             DateTime
   amount             Decimal       @db.Decimal(14, 2)
+  // For a foreign-currency money account: the amount in that currency and the rate it was converted at. `amount` above is
+  // always in the business currency.
+  foreignAmount      Decimal?      @db.Decimal(14, 2)
+  exchangeRate       Decimal?      @db.Decimal(18, 8)
   counterparty       String
   details            String?
   // Expense or liability account for any amount not applied to bills.
@@ -1054,4 +1072,30 @@ model ExchangeRate {
 
   @@unique([businessId, currency, date])
   @@index([businessId, currency, date])
+}
+
+// ---------- Money transfers and currency exchanges ----------
+
+// Money moved between two of the business's own bank, mobile money or cash accounts. Between accounts in different
+// currencies it is also a currency exchange: what left and what arrived are each in their own currency, and the
+// difference between them (at the rates given) is an exchange gain or loss.
+model MoneyTransfer {
+  id            String   @id @default(cuid())
+  businessId    String
+  fromAccountId String
+  toAccountId   String
+  date          DateTime @db.Date
+  // In the currency of each account.
+  fromAmount    Decimal  @db.Decimal(16, 2)
+  toAmount      Decimal  @db.Decimal(16, 2)
+  // Business-currency value of one unit of a foreign account's currency on the day. Null for business-currency accounts.
+  fromRate      Decimal? @db.Decimal(18, 8)
+  toRate        Decimal? @db.Decimal(18, 8)
+  note          String?
+  createdAt     DateTime @default(now())
+  business      Business @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  fromAccount   Account  @relation("TransferFrom", fields: [fromAccountId], references: [id], onDelete: Cascade)
+  toAccount     Account  @relation("TransferTo", fields: [toAccountId], references: [id], onDelete: Cascade)
+
+  @@index([businessId, date])
 }

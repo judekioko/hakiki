@@ -15,7 +15,7 @@ export default async function NewReconciliationPage({ searchParams }: { searchPa
   const accounts = await prisma.account.findMany({
     where: { businessId: business.id, moneyKind: { not: null }, isArchived: false },
     orderBy: { code: "asc" },
-    select: { id: true, name: true },
+    select: { id: true, name: true, currency: true },
   });
   const openingByAccount: Record<string, number> = {};
   for (const a of accounts) openingByAccount[a.id] = num((await previousReconciliation(a.id))?.statementBalance);

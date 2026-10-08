@@ -418,6 +418,10 @@ export async function analyseImport(business: Business, kind: ImportKind, text: 
         continue;
       }
       const account = matches[0];
+      if (account.currency) {
+        push(line, `${account.code} · ${account.name}`, "", "error", null, `${account.name} is in ${account.currency}. Enter its opening balance in the foreign-currency section of the Opening balances page`);
+        continue;
+      }
       if (where[account.id]) {
         push(line, `${account.code} · ${account.name}`, "", "error", null, where[account.id]);
         continue;

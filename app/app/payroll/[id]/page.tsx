@@ -25,7 +25,7 @@ export default async function PayRunPage({ params }: { params: Promise<{ id: str
   });
   if (!run) notFound();
   const { fmt, pack } = businessContext(business);
-  const moneyAccounts = await moneyAccountOptions(business.id);
+  const moneyAccounts = await moneyAccountOptions(business.id, { baseOnly: true });
 
   const sum = (f: "gross" | "incomeTax" | "employeeDeductions" | "employerContributions" | "net") =>
     round2(run.payslips.reduce((s, p) => s + num(p[f]), 0));

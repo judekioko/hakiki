@@ -22,7 +22,7 @@ import {
 import { createAccount, createManualJournal, createTaxRate } from "@/lib/actions/accounting";
 import { AccountSelect, Feedback, Field, SubmitButton, useFormAction, type AccountOption, type Option } from "./form-kit";
 import { LineItemsEditor, type EditorItem, type EditorLine, type EditorTaxRate } from "./line-items-editor";
-import type { MoneyAccountOption } from "./forms";
+import { MoneyAccountField, type MoneyAccountOption } from "./forms";
 
 function MoneyAccountSelect({ accounts, defaultValue }: { accounts: MoneyAccountOption[]; defaultValue?: string }) {
   return (
@@ -635,6 +635,8 @@ export function ReceiptForm({
   customerId,
   defaultAmount,
   defaultPayer,
+  baseCurrency,
+  rates,
 }: {
   moneyAccounts: MoneyAccountOption[];
   today: string;
@@ -642,6 +644,8 @@ export function ReceiptForm({
   customerId?: string;
   defaultAmount?: number;
   defaultPayer?: string;
+  baseCurrency: string;
+  rates: Record<string, number>;
 }) {
   const { state, onSubmit, pending } = useFormAction(recordReceipt);
   return (
@@ -650,9 +654,13 @@ export function ReceiptForm({
       <input type="hidden" name="invoiceId" value={invoiceId ?? ""} />
       <input type="hidden" name="customerId" value={customerId ?? ""} />
       <div className="grid gap-4 sm:grid-cols-2">
-        <Field label="Received into" htmlFor="moneyAccountId">
-          <MoneyAccountSelect accounts={moneyAccounts} defaultValue={moneyAccounts.find((a) => a.kind === "MOBILE_MONEY")?.id} />
-        </Field>
+        <MoneyAccountField
+          accounts={moneyAccounts}
+          label="Received into"
+          defaultValue={moneyAccounts.find((a) => a.kind === "MOBILE_MONEY")?.id}
+          baseCurrency={baseCurrency}
+          rates={rates}
+        />
         <Field label="Date received" htmlFor="receivedAt">
           <Input id="receivedAt" name="receivedAt" type="date" defaultValue={today} required />
         </Field>
@@ -998,9 +1006,10 @@ export function PayrollPaymentForm({
 
 // ---------- Accounting ----------
 
-export function AccountForm() {
+export function AccountForm({ baseCurrency }: { baseCurrency: string }) {
   const { state, onSubmit, pending } = useFormAction(createAccount);
   const [type, setType] = useState("EXPENSE");
+  const [moneyKind, setMoneyKind] = useState("");
   return (
     <form onSubmit={onSubmit} className="space-y-4">
       <Feedback state={state} />
@@ -1025,11 +1034,25 @@ export function AccountForm() {
         {type === "ASSET" ? (
           <div className="sm:col-span-2">
             <Field label="Holds money?" htmlFor="moneyKind" hint="Bank, mobile money and cash accounts can receive imports and payments">
-              <Select id="moneyKind" name="moneyKind" defaultValue="">
+              <Select id="moneyKind" name="moneyKind" value={moneyKind} onChange={(e) => setMoneyKind(e.target.value)}>
                 <option value="">No</option>
                 <option value="BANK">Bank account</option>
                 <option value="MOBILE_MONEY">Mobile money wallet / till</option>
                 <option value="CASH">Cash</option>
+              </Select>
+            </Field>
+          </div>
+        ) : null}
+        {type === "ASSET" && moneyKind ? (
+          <div className="sm:col-span-3">
+            <Field label="Currency of the account" htmlFor="accountCurrency" hint="Choose a foreign currency for a USD, EUR... account. It is fixed once there are transactions.">
+              <Select id="accountCurrency" name="currency" defaultValue="">
+                <option value="">{baseCurrency} (your business currency)</option>
+                {foreignCurrencies(baseCurrency).map((c) => (
+                  <option key={c.code} value={c.code}>
+                    {c.code} · {c.name}
+                  </option>
+                ))}
               </Select>
             </Field>
           </div>

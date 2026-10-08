@@ -2,7 +2,7 @@ import Link from "next/link";
 import { prisma } from "@/lib/prisma";
 import { requireBusiness } from "@/lib/business";
 import { businessContext } from "@/lib/form-options";
-import { formatDate } from "@/lib/format";
+import { formatDate, moneyFormatter } from "@/lib/format";
 import { num } from "@/lib/money";
 import { reconciliationOverview } from "@/lib/reconcile";
 import { PageHeader } from "@/components/page-header";
@@ -15,11 +15,12 @@ export const metadata = { title: "Bank reconciliation" };
 export default async function ReconcilePage() {
   const { business } = await requireBusiness();
   const { fmt } = businessContext(business);
+  const fmtIn = (currency: string | null) => (currency ? moneyFormatter(currency) : fmt);
   const [overview, history] = await Promise.all([
     reconciliationOverview(business.id),
     prisma.reconciliation.findMany({
       where: { businessId: business.id, status: "COMPLETED" },
-      include: { account: { select: { name: true } } },
+      include: { account: { select: { name: true, currency: true } } },
       orderBy: { statementDate: "desc" },
       take: 20,
     }),
@@ -50,9 +51,9 @@ export default async function ReconcilePage() {
             {overview.map(({ account, last, inProgress, uncleared, ledgerBalance }) => (
               <Tr key={account.id}>
                 <Td className="font-medium text-slate-900">{account.name}</Td>
-                <Td className="whitespace-nowrap text-right">{fmt(ledgerBalance)}</Td>
+                <Td className="whitespace-nowrap text-right">{fmtIn(account.currency)(ledgerBalance)}</Td>
                 <Td className="whitespace-nowrap">
-                  {last ? `${formatDate(last.statementDate)} · ${fmt(num(last.statementBalance))}` : <span className="text-slate-400">Never</span>}
+                  {last ? `${formatDate(last.statementDate)} · ${fmtIn(account.currency)(num(last.statementBalance))}` : <span className="text-slate-400">Never</span>}
                 </Td>
                 <Td className="text-right">{uncleared}</Td>
                 <Td className="text-right">
@@ -88,7 +89,7 @@ export default async function ReconcilePage() {
                 <Tr key={r.id}>
                   <Td>{r.account.name}</Td>
                   <Td className="whitespace-nowrap">{formatDate(r.statementDate)}</Td>
-                  <Td className="whitespace-nowrap text-right">{fmt(num(r.statementBalance))}</Td>
+                  <Td className="whitespace-nowrap text-right">{fmtIn(r.account.currency)(num(r.statementBalance))}</Td>
                   <Td>
                     <Badge tone="teal">{r.completedBy ?? "—"}</Badge>
                   </Td>

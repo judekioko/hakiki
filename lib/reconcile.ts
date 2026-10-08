@@ -6,8 +6,14 @@ import { openFrom } from "./period-lock";
 // Reconciliation works on the ledger lines of a money account (bank, mobile money or cash). Debits are money in,
 // credits are money out. Imported statements become payments and receipts, which post those lines.
 
-export function clearedBalance(opening: number, lines: { debit: unknown; credit: unknown }[]) {
-  return round2(opening + lines.reduce((s, l) => s + num(l.debit as never) - num(l.credit as never), 0));
+// A foreign-currency account is reconciled in its own currency: what counts is the amount in that currency, not the
+// converted amount in the books.
+export function lineMovement(line: { debit: unknown; credit: unknown; foreignAmount?: unknown }, foreign: boolean) {
+  return foreign ? num(line.foreignAmount as never) : num(line.debit as never) - num(line.credit as never);
+}
+
+export function clearedBalance(opening: number, lines: { debit: unknown; credit: unknown; foreignAmount?: unknown }[], foreign = false) {
+  return round2(opening + lines.reduce((s, l) => s + lineMovement(l, foreign), 0));
 }
 
 export async function previousReconciliation(accountId: string, before?: Date) {
@@ -19,10 +25,16 @@ export async function previousReconciliation(accountId: string, before?: Date) {
 
 // Lines that could appear on this statement: not cleared in another reconciliation and dated on or before it.
 export async function candidateLines(reconciliation: { id: string; businessId: string; accountId: string; statementDate: Date }) {
+  const account = await prisma.account.findUnique({ where: { id: reconciliation.accountId }, select: { currency: true } });
   return prisma.journalLine.findMany({
     where: {
       accountId: reconciliation.accountId,
-      entry: { businessId: reconciliation.businessId, date: { lt: openFrom(reconciliation.statementDate) } },
+      entry: {
+        businessId: reconciliation.businessId,
+        date: { lt: openFrom(reconciliation.statementDate) },
+        // Revaluations only restate the books' value of a foreign balance: the bank never sees them.
+        ...(account?.currency ? { NOT: { sourceType: "FX_REVALUATION" as const } } : {}),
+      },
       OR: [{ reconciliationId: null }, { reconciliationId: reconciliation.id }],
     },
     include: { entry: { select: { date: true, memo: true, sourceType: true, sourceId: true } } },
@@ -37,18 +49,22 @@ export async function reconciliationOverview(businessId: string) {
   });
   return Promise.all(
     accounts.map(async (account) => {
-      const [last, inProgress, uncleared, totals] = await Promise.all([
+      const [last, inProgress, uncleared, totals, foreignTotal] = await Promise.all([
         previousReconciliation(account.id),
         prisma.reconciliation.findFirst({ where: { accountId: account.id, status: "IN_PROGRESS" } }),
-        prisma.journalLine.count({ where: { accountId: account.id, reconciliationId: null } }),
+        prisma.journalLine.count({
+          where: { accountId: account.id, reconciliationId: null, ...(account.currency ? { entry: { NOT: { sourceType: "FX_REVALUATION" as const } } } : {}) },
+        }),
         prisma.journalLine.aggregate({ where: { accountId: account.id }, _sum: { debit: true, credit: true } }),
+        prisma.journalLine.aggregate({ where: { accountId: account.id }, _sum: { foreignAmount: true } }),
       ]);
       return {
         account,
         last,
         inProgress,
         uncleared,
-        ledgerBalance: round2(num(totals._sum.debit) - num(totals._sum.credit)),
+        // For a foreign-currency account the balance in its own currency; otherwise the business-currency balance.
+        ledgerBalance: account.currency ? round2(num(foreignTotal._sum.foreignAmount)) : round2(num(totals._sum.debit) - num(totals._sum.credit)),
       };
     })
   );

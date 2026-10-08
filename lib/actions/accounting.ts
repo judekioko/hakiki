@@ -8,6 +8,7 @@ import { audit } from "@/lib/audit";
 import { requireBusiness } from "@/lib/business";
 import { lockMessage, reconciledMessage } from "@/lib/period-lock";
 import { blockedWithMessage } from "@/lib/lock-guard";
+import { CURRENCIES } from "@/lib/currencies";
 import { round2 } from "@/lib/money";
 import { replaceEntry, removeEntry } from "@/lib/ledger";
 import { accountSchema, firstError, journalLineSchema, parseJsonField, taxRateSchema } from "@/lib/validators";
@@ -32,8 +33,21 @@ export async function createAccount(_prev: ActionState, formData: FormData): Pro
   if (await prisma.account.findFirst({ where: { businessId: business.id, code: d.code } })) {
     return { error: `Account code ${d.code} is already used` };
   }
+  const currency = String(formData.get("currency") ?? "").trim().toUpperCase();
+  if (currency && !d.moneyKind) return { error: "Only bank, mobile money and cash accounts can be in a foreign currency" };
+  if (currency && (currency === business.currency || !CURRENCIES.some((c) => c.code === currency))) {
+    return { error: "Choose a foreign currency from the list, or leave it as the business currency" };
+  }
   await prisma.account.create({
-    data: { businessId: business.id, code: d.code, name: d.name, type: d.type, moneyKind: d.moneyKind ?? null, description: d.description ?? null },
+    data: {
+      businessId: business.id,
+      code: d.code,
+      name: d.name,
+      type: d.type,
+      moneyKind: d.moneyKind ?? null,
+      currency: currency || null,
+      description: d.description ?? null,
+    },
   });
   await audit(business.id, "CREATE", "ACCOUNT", null, `Created account ${d.code} ${d.name}`);
   revalidateAll();
@@ -81,6 +95,9 @@ export async function createManualJournal(_prev: ActionState, formData: FormData
   const accountIds = [...new Set(lines.map((l) => l.accountId))];
   const owned = await prisma.account.count({ where: { id: { in: accountIds }, businessId: business.id } });
   if (owned !== accountIds.length) return { error: "One of the accounts was not found" };
+  if ((await prisma.account.count({ where: { id: { in: accountIds }, currency: { not: null } } })) > 0) {
+    return { error: "A foreign-currency account cannot be used in a manual journal. Use a transfer, money received or money paid out, or the revaluation page." };
+  }
 
   const sourceId = crypto.randomUUID();
   await replaceEntry(business.id, "MANUAL", sourceId, {

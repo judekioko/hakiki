@@ -1,6 +1,6 @@
 import "server-only";
 import { prisma } from "./prisma";
-import { num } from "./money";
+import { num, round2 } from "./money";
 
 // The most recent saved rate for each currency, as base-currency units per one unit of the foreign currency.
 export async function latestRates(businessId: string): Promise<Record<string, number>> {
@@ -32,3 +32,19 @@ export async function ensureSystemAccount(businessId: string, key: keyof typeof 
 
 // Exchange gains and losses live in one expense account (a negative balance is a net gain).
 export const ensureFxAccount = (businessId: string) => ensureSystemAccount(businessId, "FX_GAIN_LOSS");
+
+// An amount typed against a money account. For a business-currency account it is the amount. For a foreign-currency
+// account it is in that currency, and is converted at the rate given: `amount` is what the books hold.
+export function convertForAccount(
+  account: { currency: string | null },
+  entered: number,
+  rateInput: FormDataEntryValue | null,
+  baseCurrency: string
+): { error: string } | { amount: number; foreignAmount: number | null; exchangeRate: number | null } {
+  if (!account.currency) return { amount: entered, foreignAmount: null, exchangeRate: null };
+  const rate = Number(rateInput);
+  if (!Number.isFinite(rate) || rate <= 0) {
+    return { error: `This account is in ${account.currency}. Enter the exchange rate: how many ${baseCurrency} one ${account.currency} is worth` };
+  }
+  return { amount: round2(entered * rate), foreignAmount: entered, exchangeRate: rate };
+}

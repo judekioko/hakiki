@@ -166,7 +166,7 @@ export function StartReconciliationForm({
   openingByAccount,
   currency,
 }: {
-  accounts: { id: string; name: string }[];
+  accounts: { id: string; name: string; currency?: string | null }[];
   defaultAccountId?: string;
   today: string;
   openingByAccount: Record<string, number>;
@@ -195,7 +195,7 @@ export function StartReconciliationForm({
           <Input id="statementBalance" name="statementBalance" inputMode="decimal" placeholder="0.00" required />
         </Field>
       </div>
-      <p className="text-xs text-slate-500">Opening balance (from the last reconciliation): {fmt(openingByAccount[accountId] ?? 0)}</p>
+      <p className="text-xs text-slate-500">Opening balance (from the last reconciliation): {(accounts.find((a) => a.id === accountId)?.currency ? moneyFormatter(accounts.find((a) => a.id === accountId)!.currency!) : fmt)(openingByAccount[accountId] ?? 0)}</p>
       <SubmitButton pending={pending}>Start reconciling</SubmitButton>
     </form>
   );
