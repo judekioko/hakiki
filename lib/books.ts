@@ -18,6 +18,7 @@ export function defaultAccounts(countryCode: string): AccountSeed[] {
     { code: "1300", name: `${pack.vatName} recoverable (input)`, type: "ASSET", key: "VAT_IN" },
     { code: "1500", name: "Equipment & furniture", type: "ASSET" },
     { code: "1510", name: "Vehicles", type: "ASSET" },
+    { code: "1590", name: "Accumulated depreciation", type: "ASSET", key: "ACCUM_DEPRECIATION" },
     { code: "2000", name: "Accounts payable", type: "LIABILITY", key: "AP" },
     { code: "2100", name: `${pack.vatName} payable (output)`, type: "LIABILITY", key: "VAT_OUT" },
     { code: "2200", name: isKenya ? "PAYE payable" : "Employee income tax payable", type: "LIABILITY", key: "PAYE_PAYABLE" },
@@ -46,11 +47,13 @@ export function defaultAccounts(countryCode: string): AccountSeed[] {
     { code: "6600", name: "Bank & mobile money charges", type: "EXPENSE", key: "BANK_CHARGES" },
     { code: "6700", name: "Telephone & internet", type: "EXPENSE" },
     { code: "6800", name: "Professional fees", type: "EXPENSE" },
+    { code: "6850", name: "Depreciation", type: "EXPENSE", key: "DEPRECIATION_EXPENSE" },
     { code: "6900", name: "Marketing & advertising", type: "EXPENSE" },
     { code: "6950", name: "Taxes & licences", type: "EXPENSE", key: "TAXES_LICENCES" },
     { code: "6990", name: "Uncategorised expense", type: "EXPENSE", key: "UNCATEGORISED_EXPENSE" },
     { code: "7000", name: "Interest expense", type: "EXPENSE", key: "INTEREST_EXPENSE" },
     { code: "7100", name: "Exchange gains and losses", type: "EXPENSE", key: "FX_GAIN_LOSS" },
+    { code: "7200", name: "Gain or loss on sale of assets", type: "EXPENSE", key: "ASSET_DISPOSAL" },
   ];
 }
 

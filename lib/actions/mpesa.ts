@@ -11,6 +11,7 @@ import { num, round2 } from "@/lib/money";
 import { encryptSecret } from "@/lib/secrets";
 import { settledAmount } from "@/lib/sales";
 import { callbackUrl, loadMpesaConfig, registerC2bUrls, simulateC2b, stkPush } from "@/lib/mpesa";
+import { recordMpesaPayment } from "@/lib/mpesa-record";
 import type { ActionState } from "./types";
 
 function revalidateAll() {
@@ -152,4 +153,35 @@ export async function requestMpesaPayment(_prev: ActionState, formData: FormData
   } catch (error) {
     return { error: error instanceof Error ? error.message : "The request could not be sent" };
   }
+}
+
+// A payment that could not be booked (closed books, no account to put it in) can be tried again once that is fixed.
+export async function retryMpesaPayment(formData: FormData) {
+  const { business } = await requireBusiness();
+  if (business.role === "STAFF") return;
+  const tx = await prisma.mpesaTransaction.findFirst({ where: { id: String(formData.get("id") ?? ""), businessId: business.id, status: "NEEDS_ATTENTION" } });
+  if (!tx || !tx.transId || !tx.amount) {
+    await setFlash("There is nothing to try again for that payment.");
+    revalidateAll();
+    return;
+  }
+  const result = await recordMpesaPayment(business.id, {
+    kind: tx.kind === "STK" ? "STK" : "C2B",
+    transId: tx.transId,
+    amount: num(tx.amount),
+    receivedAt: tx.receivedAt ?? tx.createdAt,
+    payer: tx.payer ?? "",
+    billRef: tx.billRef,
+    phone: tx.phone,
+    invoiceId: tx.invoiceId,
+    checkoutRequestId: tx.checkoutRequestId,
+  });
+  if (result.status === "NEEDS_ATTENTION") {
+    const fresh = await prisma.mpesaTransaction.findUnique({ where: { id: tx.id }, select: { note: true } });
+    await setFlash(`It still cannot be recorded: ${fresh?.note ?? result.note ?? "see the note"}`);
+  } else {
+    await audit(business.id, "UPDATE", "MPESA", tx.id, `Recorded the M-Pesa payment ${tx.transId} on a second try`);
+    await setFlash(`Payment ${tx.transId} is now recorded.`);
+  }
+  revalidateAll();
 }

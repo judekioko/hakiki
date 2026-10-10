@@ -81,6 +81,8 @@ enum JournalSource {
   GOODS_RECEIPT
   TRANSFER
   FX_REVALUATION
+  DEPRECIATION
+  ASSET_DISPOSAL
 }
 
 enum CreditNoteStatus {
@@ -164,31 +166,31 @@ model User {
 }
 
 model Business {
-  id                    String             @id @default(cuid())
+  id                    String              @id @default(cuid())
   name                  String
   // Tax identification number (KRA PIN in Kenya, TIN elsewhere). Column name kept from the Kenya-only version.
   kraPin                String?
   // ISO country code; drives currency, tax defaults and wording (see lib/countries.ts).
-  country               String             @default("KE")
-  currency              String             @default("KES")
-  vatRegistered         Boolean            @default(true)
+  country               String              @default("KE")
+  currency              String              @default("KES")
+  vatRegistered         Boolean             @default(true)
   address               String?
   phone                 String?
   email                 String?
   invoiceFooter         String?
   // Income tax rate applied to unbacked expenses when estimating tax at risk (30% for Kenyan companies).
-  incomeTaxRate         Decimal            @default(30) @db.Decimal(5, 2)
+  incomeTaxRate         Decimal             @default(30) @db.Decimal(5, 2)
   // Last month of the financial year (12 = December year end).
-  yearEndMonth          Int                @default(12)
+  yearEndMonth          Int                 @default(12)
   // Monthly personal relief for the configurable payroll engine (countries without a built-in one).
-  payrollPersonalRelief Decimal            @default(0) @db.Decimal(14, 2)
+  payrollPersonalRelief Decimal             @default(0) @db.Decimal(14, 2)
   // Set once the default chart of accounts and tax rates have been created.
   booksReadyAt          DateTime?
   // Books are closed through this date (inclusive): nothing dated on or before it can be added, changed or removed.
-  lockedThrough         DateTime?          @db.Date
+  lockedThrough         DateTime?           @db.Date
   // The date the opening balances were taken from (the day before the books started in Hakiki).
-  openingDate           DateTime?          @db.Date
-  createdAt             DateTime           @default(now())
+  openingDate           DateTime?           @db.Date
+  createdAt             DateTime            @default(now())
   memberships           Membership[]
   suppliers             Supplier[]
   invoices              Invoice[]
@@ -219,6 +221,8 @@ model Business {
   moneyTransfers        MoneyTransfer[]
   mpesaConfig           MpesaConfig?
   mpesaTransactions     MpesaTransaction[]
+  fixedAssets           FixedAsset[]
+  assetDepreciations    AssetDepreciation[]
 }
 
 model Membership {
@@ -255,6 +259,8 @@ model Account {
   reconciliations Reconciliation[]
   transfersOut    MoneyTransfer[]  @relation("TransferFrom")
   transfersIn     MoneyTransfer[]  @relation("TransferTo")
+  assetsHeld      FixedAsset[]     @relation("AssetCost")
+  assetSales      FixedAsset[]     @relation("AssetProceeds")
 
   @@unique([businessId, code])
   @@unique([businessId, systemKey])
@@ -1154,9 +1160,72 @@ model MpesaTransaction {
   invoiceId         String?
   receiptId         String?
   note              String?
+  // When the customer paid and the name Safaricom gave, kept so a payment that could not be booked can be tried again.
+  receivedAt        DateTime?
+  payer             String?
   createdAt         DateTime      @default(now())
   business          Business      @relation(fields: [businessId], references: [id], onDelete: Cascade)
 
   @@unique([businessId, transId])
   @@index([businessId, createdAt])
+}
+
+// ---------- Fixed assets ----------
+
+enum DepreciationMethod {
+  STRAIGHT_LINE
+  REDUCING_BALANCE
+}
+
+enum AssetStatus {
+  ACTIVE
+  DISPOSED
+}
+
+// A thing the business owns and uses for years. The cost itself is already in the books (a bill, a payment or the opening
+// balances) in the asset account chosen here; the register adds the monthly depreciation and the sale or write-off.
+model FixedAsset {
+  id                String              @id @default(cuid())
+  businessId        String
+  number            String
+  name              String
+  notes             String?
+  assetAccountId    String
+  purchaseDate      DateTime            @db.Date
+  cost              Decimal             @db.Decimal(16, 2)
+  salvageValue      Decimal             @default(0) @db.Decimal(16, 2)
+  method            DepreciationMethod  @default(STRAIGHT_LINE)
+  // Straight line: the months over which cost less salvage value is spread. Reducing balance: the yearly rate in percent.
+  usefulLifeMonths  Int?
+  annualRate        Decimal?            @db.Decimal(6, 2)
+  // The first month to depreciate, and depreciation already in the books before this register took over.
+  depreciateFrom    DateTime            @db.Date
+  priorDepreciation Decimal             @default(0) @db.Decimal(16, 2)
+  status            AssetStatus         @default(ACTIVE)
+  disposedAt        DateTime?           @db.Date
+  disposalProceeds  Decimal?            @db.Decimal(16, 2)
+  proceedsAccountId String?
+  createdAt         DateTime            @default(now())
+  business          Business            @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  assetAccount      Account             @relation("AssetCost", fields: [assetAccountId], references: [id], onDelete: Restrict)
+  proceedsAccount   Account?            @relation("AssetProceeds", fields: [proceedsAccountId], references: [id], onDelete: SetNull)
+  depreciations     AssetDepreciation[]
+
+  @@unique([businessId, number])
+  @@index([businessId, status])
+}
+
+// One month's depreciation of one asset, dated the last day of the month it covers.
+model AssetDepreciation {
+  id         String     @id @default(cuid())
+  businessId String
+  assetId    String
+  month      DateTime   @db.Date
+  amount     Decimal    @db.Decimal(16, 2)
+  createdAt  DateTime   @default(now())
+  business   Business   @relation(fields: [businessId], references: [id], onDelete: Cascade)
+  asset      FixedAsset @relation(fields: [assetId], references: [id], onDelete: Cascade)
+
+  @@unique([assetId, month])
+  @@index([businessId, month])
 }

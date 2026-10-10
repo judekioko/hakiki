@@ -5,7 +5,7 @@ import { businessContext } from "@/lib/form-options";
 import { formatDate } from "@/lib/format";
 import { num } from "@/lib/money";
 import { callbackUrl } from "@/lib/mpesa";
-import { registerMpesaUrls, rotateMpesaToken, simulateMpesaPayment } from "@/lib/actions/mpesa";
+import { registerMpesaUrls, retryMpesaPayment, rotateMpesaToken, simulateMpesaPayment } from "@/lib/actions/mpesa";
 import { PageHeader } from "@/components/page-header";
 import { Card, CardBody, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -196,7 +196,17 @@ export default async function MpesaPage() {
                   <Td>
                     <Badge tone={TONE[t.status]}>{t.kind === "STK" ? "Request: " : ""}{LABEL[t.status]}</Badge>
                   </Td>
-                  <Td className="text-xs text-slate-500">{t.note ?? ""}</Td>
+                  <Td className="text-xs text-slate-500">
+                    {t.note ?? ""}
+                    {t.status === "NEEDS_ATTENTION" && t.transId && canManage ? (
+                      <form action={retryMpesaPayment} className="mt-1">
+                        <input type="hidden" name="id" value={t.id} />
+                        <SubmitButton variant="secondary" size="sm" pendingText="Trying...">
+                          Try again
+                        </SubmitButton>
+                      </form>
+                    ) : null}
+                  </Td>
                 </Tr>
               ))}
             </Tbody>

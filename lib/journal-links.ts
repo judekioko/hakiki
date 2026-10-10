@@ -18,6 +18,10 @@ export function sourceHref(sourceType: JournalSource, sourceId: string | null): 
       return "/app/transfers";
     case "FX_REVALUATION":
       return "/app/revaluation";
+    case "DEPRECIATION":
+      return "/app/assets";
+    case "ASSET_DISPOSAL":
+      return `/app/assets/${sourceId}`;
     case "OPENING_BALANCE":
       return "/app/opening-balances";
     case "SUPPLIER_CREDIT":
@@ -43,4 +47,6 @@ export const SOURCE_LABEL: Record<JournalSource, string> = {
   GOODS_RECEIPT: "Goods received",
   TRANSFER: "Transfer",
   FX_REVALUATION: "Revaluation",
+  DEPRECIATION: "Depreciation",
+  ASSET_DISPOSAL: "Asset sale",
 };

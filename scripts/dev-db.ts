@@ -14,6 +14,8 @@ const pg = new EmbeddedPostgres({
   user,
   password,
   persistent: true,
+  // Only used when the data directory is first created: names and notes in any script (Amharic, Arabic, ...) must fit.
+  initdbFlags: ["--encoding=UTF8", "--locale=C"],
 });
 
 function isPortOpen(portToCheck: number): Promise<boolean> {

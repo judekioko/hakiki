@@ -26,6 +26,7 @@ export const AUDIT_ENTITIES: Record<string, string> = {
   SUPPLIER_CREDIT: "Supplier credit note",
   GOODS_RECEIPT: "Goods received",
   RECURRING: "Recurring invoice",
+  FIXED_ASSET: "Fixed asset",
 };
 
 // Appends a line to the business's audit trail, attributed to the signed-in user.
@@ -37,10 +38,16 @@ export async function audit(
   entityId: string | null,
   summary: string
 ) {
+  // Loaded on demand: the session code needs the Next.js request context, which scripts, tests and callbacks from
+  // other services do not have. Without one the entry is attributed to "System" rather than lost.
+  let session: { userId: string; name: string } | null = null;
   try {
-    // Loaded on demand: the session code needs the Next.js request context, which scripts and tests do not have.
     const { getSession } = await import("./session");
-    const session = await getSession();
+    session = await getSession();
+  } catch {
+    session = null;
+  }
+  try {
     await prisma.auditLog.create({
       data: {
         businessId,

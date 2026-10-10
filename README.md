@@ -70,6 +70,13 @@ place, in the business's own currency.
   booked (closed period, no account) is kept as "Needs attention" instead of being lost. Safaricom must be able to
   reach the app, so set `APP_URL` to a public https address. Tested against the documented payloads; sandbox
   credentials are needed to try the live round trip.
+- **Fixed assets:** a register of vehicles, equipment and furniture (Accounting → Fixed assets). The cost is recorded as
+  a bill, payment or opening balance in an asset account; the register then books depreciation, straight line (a fixed
+  monthly amount, the last month taking the rounding) or reducing balance, one journal entry per finished month, with
+  accumulated depreciation as a contra asset. Assets you already owned carry the depreciation your old books show, and
+  start from the first month not yet written off. Selling or writing off an asset books the proceeds, clears cost and
+  accumulated depreciation, and shows the gain or loss on sale (no depreciation in the month of sale; selling can be
+  undone). The register warns when it disagrees with the ledger. This is book depreciation, not tax capital allowances.
 - **Foreign-currency accounts:** a bank, mobile money or cash account can be held in a foreign currency (USD, EUR...).
   Money received and paid, and imported statements, are entered in that currency at a rate; the books hold the converted
   amounts and each line also keeps its amount in the account's own currency. **Transfers & exchange** moves money
@@ -110,6 +117,17 @@ npm run seed:demo      # optional sample business: demo@example.com / Demo@1234
 ```
 
 `.env` needs `DATABASE_URL` and `SESSION_SECRET` (see `.env.example`).
+
+### Tests
+
+```bash
+npm test               # unit tests, plus ledger, M-Pesa and fixed-asset tests against the local database
+```
+
+The database tests create a scratch business, post real documents through the ledger code, check that every entry
+balances and then delete the business, so they can run against the development database without touching its data.
+They refuse to run against anything but `localhost`. Lint, types, tests and a production build also run on every push
+(`.github/workflows/ci.yml`).
 
 ### Schema changes
 

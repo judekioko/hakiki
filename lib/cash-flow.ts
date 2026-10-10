@@ -32,6 +32,7 @@ const LABELS: Record<string, string> = {
 };
 
 type Section = "operating" | "investing" | "financing" | "opening";
+const ASSET_SALE_KEY = "investing:asset-sale";
 
 // The direct method, built from the ledger. Every journal entry that touches a bank, mobile money or cash account
 // is balanced, so what happened to the cash is exactly the opposite of what happened to the other lines of that
@@ -66,6 +67,14 @@ export async function cashFlow(businessId: string, from: Date, to: Date) {
       const effect = num(line.credit) - num(line.debit);
       if (effect === 0) continue;
 
+      // Selling an asset is one investing item: what came in, whatever the cost, depreciation and gain or loss were.
+      if (entry.sourceType === "ASSET_DISPOSAL") {
+        const current = totals.get(ASSET_SALE_KEY) ?? { section: "investing" as Section, amount: 0 };
+        current.amount = round2(current.amount + effect);
+        totals.set(ASSET_SALE_KEY, current);
+        continue;
+      }
+
       let section: Section;
       if (entry.sourceType === "OPENING_BALANCE" || account.systemKey === "OPENING_BALANCE") section = "opening";
       else if (account.type === "INCOME" || account.type === "EXPENSE" || (account.systemKey && OPERATING_KEYS.has(account.systemKey))) section = "operating";
@@ -83,6 +92,7 @@ export async function cashFlow(businessId: string, from: Date, to: Date) {
     [...totals.entries()]
       .filter(([, v]) => v.section === section && Math.abs(v.amount) >= 0.005)
       .map(([key, v]) => {
+        if (key === ASSET_SALE_KEY) return { id: "asset-sale", code: "", name: "Sale of fixed assets", balance: v.amount, sort: "9999" };
         const account = byId.get(key.split(":")[1])!;
         const label = account.systemKey ? LABELS[account.systemKey] : undefined;
         return { id: account.id, code: label ? "" : account.code, name: label ?? account.name, balance: v.amount, sort: account.code };

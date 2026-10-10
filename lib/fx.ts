@@ -16,6 +16,9 @@ const SYSTEM_ACCOUNTS = {
   FX_GAIN_LOSS: { code: 7100, name: "Exchange gains and losses", type: "EXPENSE" },
   GRNI: { code: 2150, name: "Goods received not invoiced", type: "LIABILITY" },
   PURCHASE_VARIANCE: { code: 5200, name: "Purchase price variance", type: "EXPENSE" },
+  ACCUM_DEPRECIATION: { code: 1590, name: "Accumulated depreciation", type: "ASSET" },
+  DEPRECIATION_EXPENSE: { code: 6850, name: "Depreciation", type: "EXPENSE" },
+  ASSET_DISPOSAL: { code: 7200, name: "Gain or loss on sale of assets", type: "EXPENSE" },
 } as const;
 
 export async function ensureSystemAccount(businessId: string, key: keyof typeof SYSTEM_ACCOUNTS): Promise<string> {

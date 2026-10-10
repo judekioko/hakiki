@@ -2,6 +2,7 @@ import "server-only";
 import { prisma } from "./prisma";
 import { num, round2 } from "./money";
 import { audit } from "./audit";
+import { formatDate } from "./format";
 import { lockMessage } from "./period-lock";
 import { postReceipt } from "./ledger";
 import { runReceiptAutoMatch } from "./receipt-match";
@@ -47,6 +48,8 @@ export async function recordMpesaPayment(businessId: string, input: MpesaPayment
       billRef: input.billRef ?? null,
       receiptId: receiptId ?? null,
       invoiceId: invoiceId ?? input.invoiceId ?? null,
+      receivedAt: input.receivedAt,
+      payer: input.payer || null,
     };
     if (input.checkoutRequestId) {
       await prisma.mpesaTransaction.upsert({
@@ -75,9 +78,11 @@ export async function recordMpesaPayment(businessId: string, input: MpesaPayment
     await remember("NEEDS_ATTENTION", "No M-Pesa account to record the payment into. Choose one in the M-Pesa settings.");
     return { status: "NEEDS_ATTENTION", note: "No account" };
   }
-  const locked = lockMessage(business, input.receivedAt);
-  if (locked) {
-    await remember("NEEDS_ATTENTION", `Paid on a day in closed books. ${locked}`);
+  if (lockMessage(business, input.receivedAt)) {
+    await remember(
+      "NEEDS_ATTENTION",
+      `Paid on ${formatDate(input.receivedAt)}, which is in closed books (closed through ${formatDate(business.lockedThrough!)}). Reopen the period under Close the books, then press Try again.`
+    );
     return { status: "NEEDS_ATTENTION", note: "Closed period" };
   }
 
