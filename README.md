@@ -57,12 +57,19 @@ place, in the business's own currency.
 - **Foreign currencies:** invoices and supplier bills can be written in another currency (USD, EUR, GBP, CNY and the
   African currencies) at a stated exchange rate, with saved rates under Settings. The customer sees the foreign amounts,
   the books hold the converted amounts, and each document keeps its own rate. Money received and paid is recorded in the
-  business currency, and any leftover difference is cleared as an exchange gain or loss with one click. Not covered:
-  foreign-currency bank accounts and period-end revaluation of open balances.
+  business currency, and any leftover difference is cleared as an exchange gain or loss with one click.
 - **CSV import:** bring customers, suppliers, products (with opening stock), your old trial balance (account balances,
   as Balance or Debit/Credit columns), and the unpaid customer invoices and supplier bills over from a spreadsheet (Accounting → Import from CSV). Each type has a downloadable template; column
   headings are matched by name, a preview shows what will happen to every row (new, already there, or a problem), and
   re-importing the same file never duplicates anything.
+- **M-Pesa (Daraja):** enter your Daraja consumer key and secret (stored encrypted) under Accounting → M-Pesa payments.
+  Customer payments to your paybill or till arrive through the C2B notification address and are recorded as money
+  received; when the customer types an invoice number as the account number the invoice is settled automatically,
+  otherwise the usual amount-and-name matching applies. "Ask for payment by M-Pesa" on an invoice sends an STK push
+  to the customer's phone. Notifications are idempotent on the M-Pesa receipt number, and anything that cannot be
+  booked (closed period, no account) is kept as "Needs attention" instead of being lost. Safaricom must be able to
+  reach the app, so set `APP_URL` to a public https address. Tested against the documented payloads; sandbox
+  credentials are needed to try the live round trip.
 - **Foreign-currency accounts:** a bank, mobile money or cash account can be held in a foreign currency (USD, EUR...).
   Money received and paid, and imported statements, are entered in that currency at a rate; the books hold the converted
   amounts and each line also keeps its amount in the account's own currency. **Transfers & exchange** moves money
@@ -115,8 +122,7 @@ npx prisma migrate deploy
 
 ## Not built yet
 
-- Direct connection to national e-invoicing systems (eTIMS, EFRIS, EBM) and mobile money APIs (M-Pesa Daraja, MoMo).
+- Direct connection to national e-invoicing systems (eTIMS, EFRIS, EBM) and mobile money APIs other than M-Pesa (MoMo, Airtel Money).
 - PDF statement import.
-- Multi-currency transactions within one business.
 
 Hakiki is not affiliated with any tax authority. Tax rates and payroll rules are defaults to confirm with an adviser.

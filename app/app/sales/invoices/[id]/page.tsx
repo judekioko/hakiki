@@ -7,6 +7,8 @@ import { currencyDigits, formatDate, formatNumber, moneyFormatter, toDateInput }
 import { businessContext, moneyAccountOptions } from "@/lib/form-options";
 import { INVOICE_DISPLAY, invoiceState } from "@/lib/sales";
 import { settleInvoiceExchangeDifference } from "@/lib/actions/fx";
+import { MpesaRequestForm } from "@/components/mpesa-forms";
+import { toWhatsAppNumber } from "@/lib/kra";
 import { latestRates } from "@/lib/fx";
 import {
   deleteDraftInvoice,
@@ -43,7 +45,7 @@ export default async function SalesInvoicePage({ params }: { params: Promise<{ i
 
   const { fmt, pack } = businessContext(business);
   const state = invoiceState(invoice);
-  const [moneyAccounts, rates] = await Promise.all([moneyAccountOptions(business.id), latestRates(business.id)]);
+  const [moneyAccounts, rates, mpesa] = await Promise.all([moneyAccountOptions(business.id), latestRates(business.id), prisma.mpesaConfig.findUnique({ where: { businessId: business.id }, select: { passkeyEnc: true } })]);
   const display = INVOICE_DISPLAY[state.status];
   // A foreign-currency invoice shows the customer's amounts in that currency; the books (and the balance owing) are
   // in the business currency at the rate stored on the invoice.
@@ -207,6 +209,17 @@ export default async function SalesInvoicePage({ params }: { params: Promise<{ i
               dueDate={invoice.dueDate}
             />
           ) : null}
+          {invoice.status === "SENT" && state.balance > 0.01 && mpesa?.passkeyEnc ? (
+            <Card>
+              <CardHeader>
+                <CardTitle>Ask for payment by M-Pesa</CardTitle>
+              </CardHeader>
+              <CardBody>
+                <MpesaRequestForm invoiceId={invoice.id} phone={toWhatsAppNumber(invoice.customer.phone) ? `0${toWhatsAppNumber(invoice.customer.phone)!.slice(3)}` : ""} balance={state.balance} />
+              </CardBody>
+            </Card>
+          ) : null}
+
           {invoice.status === "SENT" && state.balance > 0.01 ? (
             <Card>
               <CardHeader>

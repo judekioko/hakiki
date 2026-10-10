@@ -132,6 +132,18 @@ enum ReminderTone {
   FINAL
 }
 
+enum MpesaEnvironment {
+  SANDBOX
+  PRODUCTION
+}
+
+enum MpesaTxStatus {
+  PENDING
+  RECORDED
+  FAILED
+  NEEDS_ATTENTION
+}
+
 enum PayrollParty {
   EMPLOYEE
   EMPLOYER
@@ -205,6 +217,8 @@ model Business {
   paymentReminders      PaymentReminder[]
   exchangeRates         ExchangeRate[]
   moneyTransfers        MoneyTransfer[]
+  mpesaConfig           MpesaConfig?
+  mpesaTransactions     MpesaTransaction[]
 }
 
 model Membership {
@@ -1098,4 +1112,51 @@ model MoneyTransfer {
   toAccount     Account  @relation("TransferTo", fields: [toAccountId], references: [id], onDelete: Cascade)
 
   @@index([businessId, date])
+}
+
+// ---------- M-Pesa (Safaricom Daraja) ----------
+
+// A business's own Daraja app and shortcode. The keys are encrypted at rest; the callback token is part of the URLs
+// Safaricom calls, so only requests that know it are accepted.
+model MpesaConfig {
+  id                String           @id @default(cuid())
+  businessId        String           @unique
+  environment       MpesaEnvironment @default(SANDBOX)
+  shortcode         String
+  // PAYBILL (customer enters an account number) or TILL (Buy Goods).
+  shortcodeType     String           @default("PAYBILL")
+  consumerKeyEnc    String
+  consumerSecretEnc String
+  passkeyEnc        String?
+  callbackToken     String
+  // The mobile money account that M-Pesa payments are recorded into.
+  moneyAccountId    String?
+  urlsRegisteredAt  DateTime?
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+  business          Business         @relation(fields: [businessId], references: [id], onDelete: Cascade)
+}
+
+// Every payment notification and payment request, kept so a notification Safaricom sends twice is only recorded once
+// and anything that could not be matched or recorded can be looked at.
+model MpesaTransaction {
+  id                String        @id @default(cuid())
+  businessId        String
+  // C2B (customer paid the paybill or till) or STK (a payment request sent to the customer's phone).
+  kind              String
+  status            MpesaTxStatus @default(PENDING)
+  // M-Pesa's own receipt number, such as SHK1A2B3C4.
+  transId           String?
+  checkoutRequestId String?       @unique
+  amount            Decimal?      @db.Decimal(14, 2)
+  phone             String?
+  billRef           String?
+  invoiceId         String?
+  receiptId         String?
+  note              String?
+  createdAt         DateTime      @default(now())
+  business          Business      @relation(fields: [businessId], references: [id], onDelete: Cascade)
+
+  @@unique([businessId, transId])
+  @@index([businessId, createdAt])
 }

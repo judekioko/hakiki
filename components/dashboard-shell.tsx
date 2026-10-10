@@ -47,6 +47,7 @@ const navSections: { title: string | null; items: NavItem[] }[] = [
       { href: "/app/opening-balances", label: "Opening balances" },
       { href: "/app/import", label: "Import from CSV" },
       { href: "/app/journal", label: "Journal" },
+      { href: "/app/mpesa", label: "M-Pesa payments" },
       { href: "/app/transfers", label: "Transfers & exchange" },
       { href: "/app/revaluation", label: "Revalue currencies" },
       { href: "/app/reconcile", label: "Bank reconciliation" },
